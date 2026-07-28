@@ -5,6 +5,42 @@ hid after an application update.
 
 ![TrayKeeper tray menu](TrayKeeper.jpg)
 
+## Download
+
+Grab the latest **TrayKeeper.exe** from the [Releases page](https://github.com/alexlvcom/TrayKeeper/releases/latest) — or directly:
+
+**https://github.com/alexlvcom/TrayKeeper/releases/latest/download/TrayKeeper.exe**
+
+It's a single, self-contained executable — **no .NET runtime install needed**. Just download and
+double-click. It runs without administrator privileges and never asks for elevation.
+
+### First run: Windows SmartScreen
+
+The exe is **unsigned** (no code-signing certificate for a free hobby tool), so Windows may show
+**"Windows protected your PC."** This is *not* a virus warning — it only means the file is new and
+hasn't built up download reputation yet. Click **More info → Run anyway**.
+
+Prefer to be sure? The source is right here — [build it yourself](#build).
+
+### Where the icon appears
+
+Windows files every new tray app into the overflow flyout, so after the first launch TrayKeeper's
+own icon sits behind the **^** chevron. Turn it on under
+Settings → Personalization → Taskbar → Other system tray icons if you want it pinned. TrayKeeper
+deliberately does not promote itself — there is no already-enabled entry to justify it, which is
+the conservative rule described below doing its job.
+
+### Verify your download (optional)
+
+Each release lists the SHA-256 of the exe. To check the file you downloaded matches:
+
+```powershell
+Get-FileHash .\TrayKeeper.exe -Algorithm SHA256
+```
+
+Compare the output against the hash shown on that version's
+[release page](https://github.com/alexlvcom/TrayKeeper/releases/latest).
+
 ## The problem
 
 Windows 11 remembers icon visibility per **executable path**. When an app updates into a new
