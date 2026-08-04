@@ -55,6 +55,9 @@ C:\Users\Alex\AppData\Local\WisprFlow\app-1.6.224\Wispr Flow.exe   hidden   <- a
 TrayKeeper finds the hidden entry, confirms it belongs to the same application as an entry the
 user already enabled, and enables it. It **does not** unhide every hidden icon.
 
+While it is running it re-scans **once a minute**, so an icon that disappears after an update comes
+back on its own — see [Auto-refresh](#auto-refresh).
+
 ## What Windows stores, and what TrayKeeper changes
 
 Everything lives under one current-user key, which backs
@@ -108,6 +111,37 @@ within roughly 1–3 seconds, in both directions, with **no broadcast and no Exp
 TrayKeeper therefore does not send `WM_SETTINGCHANGE` and never restarts Explorer. The results
 window has an explicit **Restart Explorer** button purely as a manual escape hatch; it always
 asks first and is never triggered automatically.
+
+## Auto-refresh
+
+**On by default, every minute.** Apps update in the background, so waiting for the user to notice a
+missing icon and click *Refresh* is the wrong default. The timer runs only while TrayKeeper is
+running — there is still no scheduled task and nothing runs when the app is closed.
+
+It is deliberately silent:
+
+- **Balloons.** An automatic refresh notifies only when it actually enabled an icon. "Nothing to do"
+  and repeated failures stay quiet; a manual refresh always reports back.
+- **Log and report.** An automatic result is written to the log and to `last-result.json` only when
+  it changed something, or when its outcome differs from the previous automatic run. A minute-by-
+  minute timer therefore cannot flood the log or rewrite the report while nothing is happening.
+- **Dialogs win.** A tick is skipped while a refresh is already running or a TrayKeeper dialog is
+  open, so an automatic refresh can never re-enable entries while you are confirming
+  *Restore last changes*.
+
+Cost per tick is one read of a single HKCU key plus file-metadata lookups for its entries; nothing
+is written unless a match is found, and a backup is still taken before any write.
+
+Turn it off from the tray menu. The interval is not in the menu, but `settings.json` accepts one:
+
+```json
+{
+  "AutoRefreshEnabled": true,
+  "AutoRefreshIntervalMinutes": 1
+}
+```
+
+Values outside 1–1440 minutes are clamped, so a hand-edited `0` cannot spin the timer.
 
 ## Duplicate detection
 
@@ -163,6 +197,7 @@ Two rules follow directly from the brief:
 | Show last results | Opens the report window |
 | Start with Windows | Current-user `Run` key registration |
 | Run refresh when TrayKeeper starts | Persisted in `settings.json` |
+| Auto-refresh every minute | Timer on/off, persisted in `settings.json`; on by default |
 | About TrayKeeper | Version, build stamp, the registry value written, and the change history |
 | Exit | Removes the icon and quits |
 
@@ -179,6 +214,8 @@ Enabled 3 duplicate tray icon entries.
 No disabled duplicate tray icons were found.
 Refresh failed. See the log for details.
 ```
+
+Automatic refreshes show only the first of those; the others would repeat every minute.
 
 ## Files TrayKeeper creates
 
@@ -236,9 +273,15 @@ off — it is unsupported for WinForms and breaks the reflection the designer-fr
     confirm it is removed.
 12. **Startup refresh.** Enable *Run refresh when TrayKeeper starts*, exit, relaunch, and confirm a
     refresh runs automatically.
-13. **No elevation.** Confirm no UAC prompt appears at any point, and that Task Manager shows
+13. **Auto-refresh.** Leave TrayKeeper running with *Auto-refresh every minute* checked, hide an app
+    that has two versioned entries, and wait. Within a minute the icon returns and a balloon
+    appears. Confirm the log gained one result line for that minute, not one per tick, and that the
+    idle minutes before it added nothing.
+14. **Auto-refresh off.** Uncheck the menu item, hide the icon again, and confirm nothing happens
+    until you refresh manually. Restart TrayKeeper and confirm the item is still unchecked.
+15. **No elevation.** Confirm no UAC prompt appears at any point, and that Task Manager shows
     near-zero CPU while idle.
-14. **Backups.** Confirm `%LocalAppData%\TrayKeeper\Backups` holds a `.json` and `.reg` pair from
+16. **Backups.** Confirm `%LocalAppData%\TrayKeeper\Backups` holds a `.json` and `.reg` pair from
     the refresh that made changes.
 
 ## Layout

@@ -6,14 +6,31 @@ namespace TrayKeeper.Settings;
 
 public sealed class AppSettings
 {
+    public const int DefaultAutoRefreshIntervalMinutes = 1;
+    public const int MinAutoRefreshIntervalMinutes = 1;
+    public const int MaxAutoRefreshIntervalMinutes = 24 * 60;
+
     /// <summary>Run one refresh automatically when TrayKeeper starts.</summary>
     public bool RunRefreshOnStartup { get; set; }
+
+    /// <summary>Re-scan on a timer while TrayKeeper runs, so hidden icons return without a manual refresh.</summary>
+    public bool AutoRefreshEnabled { get; set; } = true;
+
+    /// <summary>Minutes between automatic refreshes. Read it through <see cref="AutoRefreshInterval"/>.</summary>
+    public int AutoRefreshIntervalMinutes { get; set; } = DefaultAutoRefreshIntervalMinutes;
 
     /// <summary>Show a balloon tip after each refresh.</summary>
     public bool ShowBalloonNotifications { get; set; } = true;
 
     /// <summary>Leave entries alone when their executable is confirmed missing.</summary>
     public bool SkipMissingExecutables { get; set; } = true;
+
+    /// <summary>
+    /// The interval the timer actually uses. settings.json is hand-editable, so the stored value is
+    /// clamped — zero or a negative number would throw when assigned to a timer.
+    /// </summary>
+    public TimeSpan AutoRefreshInterval => TimeSpan.FromMinutes(Math.Clamp(
+        AutoRefreshIntervalMinutes, MinAutoRefreshIntervalMinutes, MaxAutoRefreshIntervalMinutes));
 }
 
 public sealed class SettingsStore

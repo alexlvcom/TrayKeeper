@@ -45,6 +45,9 @@ Desktop.ini
 $RECYCLE.BIN/
 *.lnk
 
+## Machine-specific local deploy target
+.ai-metadata.env
+
 ## Local registry exports captured while investigating (never commit user registry data)
 *.reg
 !docs/**/*.reg

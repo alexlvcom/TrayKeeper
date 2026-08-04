@@ -15,6 +15,13 @@ public sealed class ResultsForm : Form
     private readonly TextBox _report;
     private readonly Button _restoreButton;
 
+    /// <summary>
+    /// True while this window is running a refresh or showing a dialog. The tray context checks it
+    /// before an automatic refresh: modal dialogs pump messages, so a timer tick could otherwise
+    /// promote entries while the user is deciding whether to restore them.
+    /// </summary>
+    public bool IsBusy { get; private set; }
+
     public ResultsForm(RefreshService refreshService, ResultStore resultStore, ExplorerRestarter explorerRestarter, Icon icon)
     {
         _refreshService = refreshService;
@@ -52,20 +59,20 @@ public sealed class ResultsForm : Form
         closeButton.Click += (_, _) => Close();
 
         var refreshButton = new Button { Text = "Refresh now", AutoSize = true };
-        refreshButton.Click += (_, _) =>
+        refreshButton.Click += (_, _) => RunWhileBusy(() =>
         {
             _refreshService.Refresh();
             LoadReport();
-        };
+        });
 
         _restoreButton = new Button { Text = "Restore last changes", AutoSize = true };
-        _restoreButton.Click += (_, _) => RestoreLastChanges();
+        _restoreButton.Click += (_, _) => RunWhileBusy(RestoreLastChanges);
 
         var openLogButton = new Button { Text = "Open log folder", AutoSize = true };
         openLogButton.Click += (_, _) => OpenFolder(AppPaths.LogDirectory);
 
         var restartExplorerButton = new Button { Text = "Restart Explorer", AutoSize = true };
-        restartExplorerButton.Click += (_, _) => RestartExplorer();
+        restartExplorerButton.Click += (_, _) => RunWhileBusy(RestartExplorer);
 
         buttons.Controls.AddRange(new Control[]
         {
@@ -78,6 +85,21 @@ public sealed class ResultsForm : Form
         CancelButton = closeButton;
 
         LoadReport();
+    }
+
+    /// <summary>Runs an action with <see cref="IsBusy"/> set, so automatic refreshes stand aside.</summary>
+    private void RunWhileBusy(Action action)
+    {
+        IsBusy = true;
+
+        try
+        {
+            action();
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
 
     public void LoadReport()

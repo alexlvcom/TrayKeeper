@@ -17,6 +17,9 @@ public sealed class RefreshService
     private readonly ILog _log;
     private readonly Func<DateTimeOffset> _clock;
 
+    /// <summary>Outcome of the last automatic refresh that was recorded; see <see cref="Finish"/>.</summary>
+    private string? _lastAutomaticSignature;
+
     public RefreshService(
         INotifyIconRegistry registry,
         BackupService backup,
@@ -33,7 +36,7 @@ public sealed class RefreshService
         _clock = clock ?? (() => DateTimeOffset.Now);
     }
 
-    public RefreshResult Refresh()
+    public RefreshResult Refresh(RefreshTrigger trigger = RefreshTrigger.Manual)
     {
         var timestamp = _clock();
         var errors = new List<string>();
@@ -42,11 +45,11 @@ public sealed class RefreshService
         {
             var settings = _settings.Load();
             var entries = _registry.Read();
-            _log.Info($"Read {entries.Count} notification-area entries.");
+            if (trigger == RefreshTrigger.Manual) _log.Info($"Read {entries.Count} notification-area entries.");
 
             if (entries.Count == 0)
             {
-                return Finish(new RefreshResult
+                return Finish(trigger, new RefreshResult
                 {
                     Timestamp = timestamp,
                     Outcome = RefreshOutcome.Failed,
@@ -77,8 +80,7 @@ public sealed class RefreshService
 
             if (analysis.Matches.Count == 0)
             {
-                _log.Info("No disabled duplicates qualified for promotion.");
-                return Finish(new RefreshResult
+                return Finish(trigger, new RefreshResult
                 {
                     Timestamp = timestamp,
                     Outcome = RefreshOutcome.NoDuplicatesFound,
@@ -92,7 +94,7 @@ public sealed class RefreshService
             var backupPath = _backup.Create(timestamp);
             if (backupPath is null)
             {
-                return Finish(new RefreshResult
+                return Finish(trigger, new RefreshResult
                 {
                     Timestamp = timestamp,
                     Outcome = RefreshOutcome.Failed,
@@ -125,7 +127,11 @@ public sealed class RefreshService
                                                or InvalidOperationException or IOException)
                 {
                     var message = $"Could not enable '{match.Target.DisplayName}' ({match.Target.KeyName}): {ex.Message}";
-                    _log.Error(message, ex);
+
+                    // Exception detail for manual refreshes only: an automatic refresh keeps hitting
+                    // the same unwritable entry every minute. Finish records the message either way.
+                    if (trigger == RefreshTrigger.Manual) _log.Error(message, ex);
+
                     errors.Add(message);
                 }
             }
@@ -136,7 +142,7 @@ public sealed class RefreshService
                 ? RefreshOutcome.ChangesApplied
                 : RefreshOutcome.Failed;
 
-            return Finish(new RefreshResult
+            return Finish(trigger, new RefreshResult
             {
                 Timestamp = timestamp,
                 Outcome = outcome,
@@ -153,13 +159,12 @@ public sealed class RefreshService
         }
         catch (Exception ex)
         {
-            _log.Error("Refresh failed.", ex);
-            return Finish(new RefreshResult
+            return Finish(trigger, new RefreshResult
             {
                 Timestamp = timestamp,
                 Outcome = RefreshOutcome.Failed,
                 Errors = new[] { ex.Message },
-            });
+            }, ex);
         }
     }
 
@@ -203,11 +208,22 @@ public sealed class RefreshService
     /// Logs and persists the result. This runs on the failure path too, so it must never throw —
     /// an exception here would escape <see cref="Refresh"/> and take the tray icon down with it.
     /// </summary>
-    private RefreshResult Finish(RefreshResult result)
+    private RefreshResult Finish(RefreshTrigger trigger, RefreshResult result, Exception? exception = null)
     {
         try
         {
+            if (!ShouldRecord(trigger, result)) return result;
+
+            if (exception is not null) _log.Error("Refresh failed.", exception);
+
             _log.Info($"Refresh result: {result.Summary}");
+
+            // Manual failures were already logged with their exception detail where they happened.
+            if (trigger == RefreshTrigger.Automatic && exception is null)
+            {
+                foreach (var error in result.Errors) _log.Warn(error);
+            }
+
             _results.SaveResult(result);
         }
         catch (Exception ex)
@@ -216,5 +232,23 @@ public sealed class RefreshService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Whether a result is worth writing to the log and to <c>last-result.json</c>. A manual refresh
+    /// always is. An automatic one runs every minute and is almost always a no-op, so it is recorded
+    /// only when it changed something or when its outcome differs from the previous automatic run —
+    /// otherwise the timer would fill the log with identical lines and rewrite the report each minute.
+    /// </summary>
+    private bool ShouldRecord(RefreshTrigger trigger, RefreshResult result)
+    {
+        if (trigger == RefreshTrigger.Manual) return true;
+        if (result.Applied.Count > 0) return true;
+
+        var signature = $"{result.Outcome}|{string.Join("|", result.Errors)}";
+        if (signature == _lastAutomaticSignature) return false;
+
+        _lastAutomaticSignature = signature;
+        return true;
     }
 }

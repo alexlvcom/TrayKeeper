@@ -28,6 +28,13 @@ public sealed record MatchingSource
     public required string Path { get; init; }
 }
 
+/// <summary>What asked for a refresh. Automatic ones run every minute, so they stay quiet.</summary>
+public enum RefreshTrigger
+{
+    Manual,
+    Automatic,
+}
+
 public enum RefreshOutcome
 {
     ChangesApplied,

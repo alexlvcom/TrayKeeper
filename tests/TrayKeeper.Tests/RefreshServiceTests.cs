@@ -60,16 +60,31 @@ internal sealed class FakeNotifyIconRegistry : INotifyIconRegistry
     }
 }
 
+/// <summary>Captures log lines so the quiet-automatic-refresh policy can be asserted.</summary>
+internal sealed class RecordingLog : ILog
+{
+    public List<string> Lines { get; } = new();
+
+    public void Debug(string message) => Lines.Add(message);
+    public void Info(string message) => Lines.Add(message);
+    public void Warn(string message) => Lines.Add(message);
+    public void Error(string message, Exception? exception = null) => Lines.Add(message);
+
+    public int Count(string fragment) => Lines.Count(line => line.Contains(fragment, StringComparison.Ordinal));
+}
+
 public sealed class RefreshServiceTests : IDisposable
 {
     private readonly string _directory = Path.Combine(
         Path.GetTempPath(), "TrayKeeperTests", Guid.NewGuid().ToString("N"));
 
-    private RefreshService CreateService(FakeNotifyIconRegistry registry, out ResultStore resultStore)
+    private RefreshService CreateService(FakeNotifyIconRegistry registry, out ResultStore resultStore) =>
+        CreateService(registry, NullLog.Instance, out resultStore);
+
+    private RefreshService CreateService(FakeNotifyIconRegistry registry, ILog log, out ResultStore resultStore)
     {
         Directory.CreateDirectory(_directory);
 
-        var log = NullLog.Instance;
         resultStore = new ResultStore(log,
             Path.Combine(_directory, "last-result.json"),
             Path.Combine(_directory, "last-changes.json"));
@@ -246,6 +261,103 @@ public sealed class RefreshServiceTests : IDisposable
 
         Assert.Equal(RefreshOutcome.ChangesApplied, result.Outcome);
         Assert.Single(result.Applied);
+    }
+
+    [Fact]
+    public void AnAutomaticRefreshAppliesChangesJustLikeAManualOne()
+    {
+        var target = Unset(@"C:\App\app-1.1.0\AppName.exe", product: "AppName", company: "Vendor");
+        var registry = new FakeNotifyIconRegistry(
+            Enabled(@"C:\App\app-1.0.0\AppName.exe", product: "AppName", company: "Vendor"),
+            target);
+
+        var result = CreateService(registry, out var resultStore).Refresh(RefreshTrigger.Automatic);
+
+        Assert.Equal(RefreshOutcome.ChangesApplied, result.Outcome);
+        Assert.Equal((target.KeyName, (bool?)true), Assert.Single(registry.Writes));
+        Assert.NotNull(resultStore.LoadResult());
+    }
+
+    [Fact]
+    public void RepeatedAutomaticRefreshesWithTheSameOutcomeAreLoggedOnce()
+    {
+        // The timer fires every minute; identical no-op results must not fill the log.
+        var registry = new FakeNotifyIconRegistry(
+            Enabled(@"C:\App\app-1.0.0\AppName.exe", product: "AppName", company: "Vendor"));
+
+        var log = new RecordingLog();
+        var service = CreateService(registry, log, out _);
+
+        service.Refresh(RefreshTrigger.Automatic);
+        service.Refresh(RefreshTrigger.Automatic);
+        service.Refresh(RefreshTrigger.Automatic);
+
+        Assert.Equal(1, log.Count("Refresh result:"));
+    }
+
+    [Fact]
+    public void EveryManualRefreshIsLogged()
+    {
+        var registry = new FakeNotifyIconRegistry(
+            Enabled(@"C:\App\app-1.0.0\AppName.exe", product: "AppName", company: "Vendor"));
+
+        var log = new RecordingLog();
+        var service = CreateService(registry, log, out _);
+
+        service.Refresh();
+        service.Refresh();
+
+        Assert.Equal(2, log.Count("Refresh result:"));
+    }
+
+    [Fact]
+    public void AnAutomaticRefreshIsLoggedAgainWhenTheOutcomeChanges()
+    {
+        var target = Unset(@"C:\App\app-1.1.0\AppName.exe", product: "AppName", company: "Vendor");
+        var registry = new FakeNotifyIconRegistry(
+            Enabled(@"C:\App\app-1.0.0\AppName.exe", product: "AppName", company: "Vendor"),
+            target);
+        registry.FailingKeys.Add(target.KeyName);
+
+        var log = new RecordingLog();
+        var service = CreateService(registry, log, out _);
+
+        service.Refresh(RefreshTrigger.Automatic);
+        service.Refresh(RefreshTrigger.Automatic);
+
+        Assert.Equal(1, log.Count("Refresh result:"));
+        Assert.Equal(1, log.Count("Could not enable"));
+
+        // The entry becomes writable, so the next tick has something new to say.
+        registry.FailingKeys.Clear();
+        service.Refresh(RefreshTrigger.Automatic);
+
+        Assert.Equal(2, log.Count("Refresh result:"));
+    }
+
+    [Fact]
+    public void ARepeatedAutomaticNoOpDoesNotRewriteTheStoredResult()
+    {
+        var registry = new FakeNotifyIconRegistry(
+            Enabled(@"C:\App\app-1.0.0\AppName.exe", product: "AppName", company: "Vendor"));
+
+        var service = CreateService(registry, out var resultStore);
+
+        // The first no-op is a new outcome, so it is recorded.
+        service.Refresh(RefreshTrigger.Automatic);
+        Assert.Equal(RefreshOutcome.NoDuplicatesFound, resultStore.LoadResult()!.Outcome);
+
+        // A marker standing in for a report written elsewhere: an identical tick must leave it alone
+        // rather than rewriting last-result.json every minute.
+        resultStore.SaveResult(new RefreshResult
+        {
+            Timestamp = new DateTimeOffset(2026, 8, 4, 9, 0, 0, TimeSpan.Zero),
+            Outcome = RefreshOutcome.ChangesApplied,
+        });
+
+        service.Refresh(RefreshTrigger.Automatic);
+
+        Assert.Equal(RefreshOutcome.ChangesApplied, resultStore.LoadResult()!.Outcome);
     }
 
     public void Dispose()

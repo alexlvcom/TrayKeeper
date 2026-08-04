@@ -5,8 +5,8 @@ using TrayKeeper.Settings;
 namespace TrayKeeper.Ui;
 
 /// <summary>
-/// Owns the notification-area icon and its menu. There is no main window and no timer: the app
-/// only does work in response to a menu command, a double-click, or a second launch.
+/// Owns the notification-area icon and its menu. There is no main window; work happens on a menu
+/// command, a double-click, a second launch, or — when auto-refresh is on — a timer tick.
 /// </summary>
 public sealed class TrayApplicationContext : ApplicationContext
 {
@@ -21,10 +21,15 @@ public sealed class TrayApplicationContext : ApplicationContext
     private readonly NotifyIcon _notifyIcon;
     private readonly ToolStripMenuItem _startWithWindowsItem;
     private readonly ToolStripMenuItem _refreshOnStartupItem;
+    private readonly ToolStripMenuItem _autoRefreshItem;
+    private readonly System.Windows.Forms.Timer _autoRefreshTimer;
 
     private AppSettings _settings;
     private ResultsForm? _resultsForm;
     private AboutForm? _aboutForm;
+
+    /// <summary>True while a refresh runs or a dialog this class opened is on screen.</summary>
+    private bool _busy;
 
     public TrayApplicationContext(
         RefreshService refreshService,
@@ -43,7 +48,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         _settings = settingsStore.Load();
         _icon = AppIcon.Load();
 
-        var refreshItem = new ToolStripMenuItem("&Refresh tray icons", null, (_, _) => RunRefresh(showBalloon: true));
+        var refreshItem = new ToolStripMenuItem("&Refresh tray icons", null, (_, _) => RunRefresh(RefreshTrigger.Manual));
         var showResultsItem = new ToolStripMenuItem("&Show last results", null, (_, _) => ShowResults());
 
         _startWithWindowsItem = new ToolStripMenuItem("Start with &Windows", null, (_, _) => ToggleStartWithWindows())
@@ -59,6 +64,21 @@ public sealed class TrayApplicationContext : ApplicationContext
             Checked = _settings.RunRefreshOnStartup,
         };
 
+        _autoRefreshItem = new ToolStripMenuItem(AutoRefreshItemText(), null, (_, _) => ToggleAutoRefresh())
+        {
+            CheckOnClick = false,
+            Checked = _settings.AutoRefreshEnabled,
+        };
+
+        // A WinForms timer ticks on the UI thread, so a refresh needs no marshalling and cannot
+        // overlap the message pump's other work.
+        _autoRefreshTimer = new System.Windows.Forms.Timer
+        {
+            Interval = (int)_settings.AutoRefreshInterval.TotalMilliseconds,
+        };
+        _autoRefreshTimer.Tick += (_, _) => OnAutoRefreshTick();
+        _autoRefreshTimer.Enabled = _settings.AutoRefreshEnabled;
+
         var aboutItem = new ToolStripMenuItem("&About TrayKeeper", null, (_, _) => ShowAbout());
         var exitItem = new ToolStripMenuItem("E&xit", null, (_, _) => ExitApplication());
 
@@ -70,6 +90,7 @@ public sealed class TrayApplicationContext : ApplicationContext
             new ToolStripSeparator(),
             _startWithWindowsItem,
             _refreshOnStartupItem,
+            _autoRefreshItem,
             new ToolStripSeparator(),
             aboutItem,
             exitItem,
@@ -78,18 +99,22 @@ public sealed class TrayApplicationContext : ApplicationContext
         _notifyIcon = new NotifyIcon
         {
             Icon = _icon,
-            Text = $"TrayKeeper v{Changelog.MarketingVersion}",
+            Text = TooltipText(),
             Visible = true,
             ContextMenuStrip = menu,
         };
 
-        _notifyIcon.DoubleClick += (_, _) => RunRefresh(showBalloon: true);
+        _notifyIcon.DoubleClick += (_, _) => RunRefresh(RefreshTrigger.Manual);
         _notifyIcon.BalloonTipClicked += (_, _) => ShowResults();
+
+        _log.Info(_settings.AutoRefreshEnabled
+            ? $"Auto-refresh is on, every {DescribeInterval()}."
+            : "Auto-refresh is off.");
 
         if (_settings.RunRefreshOnStartup)
         {
             _log.Info("Running the startup refresh.");
-            RunRefresh(showBalloon: true);
+            RunRefresh(RefreshTrigger.Manual);
         }
     }
 
@@ -98,29 +123,49 @@ public sealed class TrayApplicationContext : ApplicationContext
     {
         if (_notifyIcon.ContextMenuStrip is { } menu && menu.InvokeRequired)
         {
-            menu.BeginInvoke(() => RunRefresh(showBalloon: true));
+            menu.BeginInvoke(() => RunRefresh(RefreshTrigger.Manual));
             return;
         }
 
-        RunRefresh(showBalloon: true);
+        RunRefresh(RefreshTrigger.Manual);
     }
 
-    private void RunRefresh(bool showBalloon)
+    /// <summary>
+    /// Skips the tick when a refresh is already running or a dialog is open. Modal dialogs pump
+    /// messages, so without this a tick could fire while the user is confirming a restore.
+    /// </summary>
+    private void OnAutoRefreshTick()
+    {
+        if (_busy || _resultsForm is { IsDisposed: false, IsBusy: true }) return;
+
+        RunRefresh(RefreshTrigger.Automatic);
+    }
+
+    private void RunRefresh(RefreshTrigger trigger)
     {
         RefreshResult result;
+        _busy = true;
 
         try
         {
-            result = _refreshService.Refresh();
+            result = _refreshService.Refresh(trigger);
         }
         catch (Exception ex)
         {
             _log.Error("Unhandled failure during refresh.", ex);
-            ShowBalloon("TrayKeeper", "Refresh failed. See the log for details.", ToolTipIcon.Error);
+            if (trigger == RefreshTrigger.Manual)
+            {
+                ShowBalloon("TrayKeeper", "Refresh failed. See the log for details.", ToolTipIcon.Error);
+            }
+
             return;
         }
+        finally
+        {
+            _busy = false;
+        }
 
-        if (showBalloon && _settings.ShowBalloonNotifications)
+        if (_settings.ShowBalloonNotifications && ShouldShowBalloon(trigger, result))
         {
             var iconKind = result.Outcome switch
             {
@@ -134,6 +179,13 @@ public sealed class TrayApplicationContext : ApplicationContext
 
         if (_resultsForm is { IsDisposed: false, Visible: true }) _resultsForm.LoadReport();
     }
+
+    /// <summary>
+    /// A manual refresh always reports back. An automatic one speaks up only when it actually
+    /// enabled something — a balloon every minute saying "nothing to do" would be noise.
+    /// </summary>
+    private static bool ShouldShowBalloon(RefreshTrigger trigger, RefreshResult result) =>
+        trigger == RefreshTrigger.Manual || result.Outcome == RefreshOutcome.ChangesApplied;
 
     private void ShowBalloon(string title, string message, ToolTipIcon iconKind) =>
         _notifyIcon.ShowBalloonTip(5000, title, message, iconKind);
@@ -178,12 +230,22 @@ public sealed class TrayApplicationContext : ApplicationContext
         if (_startupManager.TrySetEnabled(desired))
         {
             _startWithWindowsItem.Checked = desired;
+            return;
         }
-        else
+
+        _startWithWindowsItem.Checked = _startupManager.IsEnabled;
+
+        // The dialog pumps messages, so hold off the auto-refresh timer while it is up.
+        _busy = true;
+
+        try
         {
-            _startWithWindowsItem.Checked = _startupManager.IsEnabled;
             MessageBox.Show("Could not change the startup setting. See the log for details.", "TrayKeeper",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        finally
+        {
+            _busy = false;
         }
     }
 
@@ -194,9 +256,43 @@ public sealed class TrayApplicationContext : ApplicationContext
         _settingsStore.Save(_settings);
     }
 
+    private void ToggleAutoRefresh()
+    {
+        _settings.AutoRefreshEnabled = !_settings.AutoRefreshEnabled;
+        _autoRefreshItem.Checked = _settings.AutoRefreshEnabled;
+        _autoRefreshTimer.Enabled = _settings.AutoRefreshEnabled;
+        _notifyIcon.Text = TooltipText();
+        _settingsStore.Save(_settings);
+
+        _log.Info(_settings.AutoRefreshEnabled
+            ? $"Auto-refresh turned on, every {DescribeInterval()}."
+            : "Auto-refresh turned off.");
+    }
+
+    /// <summary>"minute" or "N minutes", from the clamped interval the timer actually uses.</summary>
+    private string DescribeInterval()
+    {
+        var minutes = (int)_settings.AutoRefreshInterval.TotalMinutes;
+        return minutes == 1 ? "minute" : $"{minutes} minutes";
+    }
+
+    private string AutoRefreshItemText() => $"&Auto-refresh every {DescribeInterval()}";
+
+    private string TooltipText()
+    {
+        var text = $"TrayKeeper v{Changelog.MarketingVersion}";
+        if (!_settings.AutoRefreshEnabled) return text;
+
+        var withInterval = $"{text} — auto-refresh every {DescribeInterval()}";
+
+        // NotifyIcon.Text rejects anything longer than 63 characters.
+        return withInterval.Length <= 63 ? withInterval : text;
+    }
+
     private void ExitApplication()
     {
         _log.Info("Exiting.");
+        _autoRefreshTimer.Stop();
         _notifyIcon.Visible = false;
         ExitThread();
     }
@@ -205,6 +301,8 @@ public sealed class TrayApplicationContext : ApplicationContext
     {
         if (disposing)
         {
+            _autoRefreshTimer.Stop();
+            _autoRefreshTimer.Dispose();
             _notifyIcon.Visible = false;
             _notifyIcon.ContextMenuStrip?.Dispose();
             _notifyIcon.Dispose();

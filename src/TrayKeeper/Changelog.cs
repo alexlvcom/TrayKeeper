@@ -12,6 +12,17 @@ public static class Changelog
     /// <summary>Newest first. Each entry: version, date, and bullet notes.</summary>
     public static readonly (string Version, string Date, string[] Notes)[] Entries =
     {
+        ("1.2.0", "2026-08-04", new[]
+        {
+            "New: auto-refresh. While TrayKeeper runs it re-scans every minute, so an icon",
+            "     hidden by an app update comes back on its own with no manual refresh.",
+            "     Toggle it from the tray menu; the interval is settable in settings.json",
+            "     (AutoRefreshIntervalMinutes, 1 to 1440).",
+            "Automatic refreshes are quiet: a balloon appears only when an icon was",
+            "     actually enabled, and the log records a repeated outcome only once.",
+            "An automatic refresh stands aside while a TrayKeeper dialog is open, so it",
+            "     cannot re-enable entries in the middle of 'Restore last changes'.",
+        }),
         ("1.1.0", "2026-07-28", new[]
         {
             "New: About window showing the version, build date, the registry key",
