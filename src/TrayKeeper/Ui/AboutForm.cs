@@ -8,7 +8,7 @@ public sealed class AboutForm : Form
 {
     public AboutForm(Icon icon)
     {
-        Text = $"About TrayKeeper — v{Changelog.MarketingVersion}";
+        Text = $"About {AppInfo.DisplayName} — v{Changelog.MarketingVersion}";
         Icon = icon;
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(520, 380);
@@ -74,7 +74,7 @@ public sealed class AboutForm : Form
 
         var title = new Label
         {
-            Text = $"TrayKeeper  v{Changelog.MarketingVersion}",
+            Text = $"{AppInfo.DisplayName}  v{Changelog.MarketingVersion}",
             Font = new Font(SystemFonts.MessageBoxFont?.FontFamily ?? FontFamily.GenericSansSerif,
                 12f, FontStyle.Bold),
             AutoSize = true,
@@ -113,7 +113,7 @@ public sealed class AboutForm : Form
         {
             // Another process can hold the clipboard open; not worth interrupting the user for.
             MessageBox.Show(this, "Could not copy to the clipboard. Try again in a moment.",
-                "TrayKeeper", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppInfo.DisplayName, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
 }

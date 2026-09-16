@@ -28,7 +28,7 @@ public sealed class ResultsForm : Form
         _resultStore = resultStore;
         _explorerRestarter = explorerRestarter;
 
-        Text = "TrayKeeper — last results";
+        Text = $"{AppInfo.DisplayName} — last results";
         Icon = icon;
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(640, 420);
@@ -114,8 +114,8 @@ public sealed class ResultsForm : Form
     {
         var confirmed = MessageBox.Show(
             this,
-            "Revert the tray icon entries that TrayKeeper enabled during the last refresh?",
-            "TrayKeeper",
+            $"Revert the tray icon entries that {AppInfo.DisplayName} enabled during the last refresh?",
+            AppInfo.DisplayName,
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question,
             MessageBoxDefaultButton.Button2);
@@ -129,7 +129,7 @@ public sealed class ResultsForm : Form
             : $"Reverted {restored} entr{(restored == 1 ? "y" : "ies")}. " +
               $"{errors.Count} could not be reverted:{Environment.NewLine}{string.Join(Environment.NewLine, errors)}";
 
-        MessageBox.Show(this, message, "TrayKeeper", MessageBoxButtons.OK,
+        MessageBox.Show(this, message, AppInfo.DisplayName, MessageBoxButtons.OK,
             errors.Count == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
 
         LoadReport();
@@ -144,7 +144,7 @@ public sealed class ResultsForm : Form
             "This is not needed for tray icon changes to take effect — they apply immediately. " +
             "Use this only if the taskbar has stopped responding to changes." + Environment.NewLine +
             Environment.NewLine + "Restart Explorer now?",
-            "TrayKeeper",
+            AppInfo.DisplayName,
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning,
             MessageBoxDefaultButton.Button2);
@@ -152,7 +152,7 @@ public sealed class ResultsForm : Form
         if (confirmed != DialogResult.Yes) return;
 
         var succeeded = _explorerRestarter.TryRestart(out var message);
-        MessageBox.Show(this, message, "TrayKeeper", MessageBoxButtons.OK,
+        MessageBox.Show(this, message, AppInfo.DisplayName, MessageBoxButtons.OK,
             succeeded ? MessageBoxIcon.Information : MessageBoxIcon.Error);
     }
 
@@ -167,7 +167,7 @@ public sealed class ResultsForm : Form
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException
                                       or UnauthorizedAccessException or InvalidOperationException)
         {
-            MessageBox.Show($"Could not open {path}.{Environment.NewLine}{ex.Message}", "TrayKeeper",
+            MessageBox.Show($"Could not open {path}.{Environment.NewLine}{ex.Message}", AppInfo.DisplayName,
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }

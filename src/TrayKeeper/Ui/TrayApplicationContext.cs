@@ -57,7 +57,7 @@ public sealed class TrayApplicationContext : ApplicationContext
             Checked = _startupManager.IsEnabled,
         };
 
-        _refreshOnStartupItem = new ToolStripMenuItem("Run refresh when TrayKeeper &starts", null,
+        _refreshOnStartupItem = new ToolStripMenuItem($"Run refresh when {AppInfo.DisplayName} &starts", null,
             (_, _) => ToggleRefreshOnStartup())
         {
             CheckOnClick = false,
@@ -79,7 +79,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         _autoRefreshTimer.Tick += (_, _) => OnAutoRefreshTick();
         _autoRefreshTimer.Enabled = _settings.AutoRefreshEnabled;
 
-        var aboutItem = new ToolStripMenuItem("&About TrayKeeper", null, (_, _) => ShowAbout());
+        var aboutItem = new ToolStripMenuItem($"&About {AppInfo.DisplayName}", null, (_, _) => ShowAbout());
         var exitItem = new ToolStripMenuItem("E&xit", null, (_, _) => ExitApplication());
 
         var menu = new ContextMenuStrip();
@@ -155,7 +155,7 @@ public sealed class TrayApplicationContext : ApplicationContext
             _log.Error("Unhandled failure during refresh.", ex);
             if (trigger == RefreshTrigger.Manual)
             {
-                ShowBalloon("TrayKeeper", "Refresh failed. See the log for details.", ToolTipIcon.Error);
+                ShowBalloon(AppInfo.DisplayName, "Refresh failed. See the log for details.", ToolTipIcon.Error);
             }
 
             return;
@@ -174,7 +174,7 @@ public sealed class TrayApplicationContext : ApplicationContext
                 _ => ToolTipIcon.None,
             };
 
-            ShowBalloon("TrayKeeper", result.Summary, iconKind);
+            ShowBalloon(AppInfo.DisplayName, result.Summary, iconKind);
         }
 
         if (_resultsForm is { IsDisposed: false, Visible: true }) _resultsForm.LoadReport();
@@ -240,7 +240,7 @@ public sealed class TrayApplicationContext : ApplicationContext
 
         try
         {
-            MessageBox.Show("Could not change the startup setting. See the log for details.", "TrayKeeper",
+            MessageBox.Show("Could not change the startup setting. See the log for details.", AppInfo.DisplayName,
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
         finally
@@ -280,7 +280,7 @@ public sealed class TrayApplicationContext : ApplicationContext
 
     private string TooltipText()
     {
-        var text = $"TrayKeeper v{Changelog.MarketingVersion}";
+        var text = $"{AppInfo.DisplayName} v{Changelog.MarketingVersion}";
         if (!_settings.AutoRefreshEnabled) return text;
 
         var withInterval = $"{text} — auto-refresh every {DescribeInterval()}";

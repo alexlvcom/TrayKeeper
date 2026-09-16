@@ -74,7 +74,7 @@ public class ChangelogTests
     {
         var text = Changelog.FormatFull();
 
-        Assert.Contains($"TrayKeeper  v{Changelog.MarketingVersion}", text);
+        Assert.Contains($"{AppInfo.DisplayName}  v{Changelog.MarketingVersion}", text);
         Assert.Contains("What's changed", text);
         Assert.Contains(@"HKCU\Control Panel\NotifyIconSettings", text);
 
@@ -101,7 +101,7 @@ public class ChangelogTests
     {
         var body = Changelog.FormatBody();
 
-        Assert.DoesNotContain($"TrayKeeper  v{Changelog.MarketingVersion}", body);
+        Assert.DoesNotContain($"{AppInfo.DisplayName}  v{Changelog.MarketingVersion}", body);
         Assert.DoesNotContain("Build ", body);
 
         // …but still carries the substance.

@@ -24,7 +24,7 @@ internal static class Program
         AppPaths.EnsureCreated();
 
         using var log = new FileLog(AppPaths.LogDirectory);
-        log.Info($"TrayKeeper starting (pid {Environment.ProcessId}).");
+        log.Info($"{AppInfo.DisplayName} starting (pid {Environment.ProcessId}).");
 
         ApplicationConfiguration.Initialize();
 
@@ -53,11 +53,11 @@ internal static class Program
         }
         catch (Exception ex)
         {
-            log.Error("TrayKeeper terminated unexpectedly.", ex);
+            log.Error($"{AppInfo.DisplayName} terminated unexpectedly.", ex);
             return 1;
         }
 
-        log.Info("TrayKeeper stopped.");
+        log.Info($"{AppInfo.DisplayName} stopped.");
         return 0;
     }
 }

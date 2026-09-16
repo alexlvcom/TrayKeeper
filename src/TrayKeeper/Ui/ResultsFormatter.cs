@@ -10,7 +10,7 @@ public static class ResultsFormatter
     {
         if (result is null)
         {
-            return "TrayKeeper has not run a refresh yet." + Environment.NewLine +
+            return $"{AppInfo.DisplayName} has not run a refresh yet." + Environment.NewLine +
                    "Choose \"Refresh tray icons\" from the tray menu to check for duplicate entries.";
         }
 
