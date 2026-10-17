@@ -12,6 +12,13 @@ public static class Changelog
     /// <summary>Newest first. Each entry: version, date, and bullet notes.</summary>
     public static readonly (string Version, string Date, string[] Notes)[] Entries =
     {
+        ("1.3.0", "2026-10-17", new[]
+        {
+            "New: Windows installer (TrayKeeper-Setup.exe) installing per-user to %LOCALAPPDATA%\\Programs\\Tray Keeper with automatic upgrade shutdown.",
+            "New: in-app update checking against GitHub releases with configurable check frequency (Hourly, Daily, Weekly, Monthly, Never) and SHA-256 verification.",
+            "New: graceful application shutdown via TrayKeeperListener on WM_CLOSE for seamless setup and uninstall.",
+            "Changed: About dialog displays actual running executable path, data and log directories, current release notes, and a Copy details button.",
+        }),
         ("1.2.1", "2026-09-16", new[]
         {
             "Changed: the app now calls itself \"Tray Keeper\" everywhere you read it — this",
@@ -68,6 +75,16 @@ public static class Changelog
 
     /// <summary>Date of the newest changelog entry.</summary>
     public static string MarketingDate => Entries[0].Date;
+
+    public static string GetReleaseNotes(string version)
+    {
+        var entry = Entries.FirstOrDefault(e => e.Version == version);
+        if (entry.Notes is { Length: > 0 })
+        {
+            return string.Join(Environment.NewLine, entry.Notes);
+        }
+        return "No release notes available for this version.";
+    }
 
     /// <summary>Full build version including the auto-incrementing build/revision.</summary>
     public static string BuildVersion

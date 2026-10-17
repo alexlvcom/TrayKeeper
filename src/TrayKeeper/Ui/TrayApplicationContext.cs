@@ -19,14 +19,18 @@ public sealed class TrayApplicationContext : ApplicationContext
     private readonly Icon _icon;
 
     private readonly NotifyIcon _notifyIcon;
-    private readonly ToolStripMenuItem _startWithWindowsItem;
-    private readonly ToolStripMenuItem _refreshOnStartupItem;
-    private readonly ToolStripMenuItem _autoRefreshItem;
     private readonly System.Windows.Forms.Timer _autoRefreshTimer;
 
     private AppSettings _settings;
     private ResultsForm? _resultsForm;
-    private AboutForm? _aboutForm;
+    private SettingsForm? _settingsForm;
+    private readonly ShutdownListenerWindow _shutdownListener;
+    private readonly UpdateService _updates = new();
+    private readonly CancellationTokenSource _updateCancellation = new();
+    private readonly System.Windows.Forms.Timer _updateTimer = new();
+    private DateTime _nextUpdateCheckUtc = DateTime.MaxValue;
+    private bool _checkingUpdate;
+    private Version? _lastOfferedUpdate;
 
     /// <summary>True while a refresh runs or a dialog this class opened is on screen.</summary>
     private bool _busy;
@@ -51,25 +55,6 @@ public sealed class TrayApplicationContext : ApplicationContext
         var refreshItem = new ToolStripMenuItem("&Refresh tray icons", null, (_, _) => RunRefresh(RefreshTrigger.Manual));
         var showResultsItem = new ToolStripMenuItem("&Show last results", null, (_, _) => ShowResults());
 
-        _startWithWindowsItem = new ToolStripMenuItem("Start with &Windows", null, (_, _) => ToggleStartWithWindows())
-        {
-            CheckOnClick = false,
-            Checked = _startupManager.IsEnabled,
-        };
-
-        _refreshOnStartupItem = new ToolStripMenuItem($"Run refresh when {AppInfo.DisplayName} &starts", null,
-            (_, _) => ToggleRefreshOnStartup())
-        {
-            CheckOnClick = false,
-            Checked = _settings.RunRefreshOnStartup,
-        };
-
-        _autoRefreshItem = new ToolStripMenuItem(AutoRefreshItemText(), null, (_, _) => ToggleAutoRefresh())
-        {
-            CheckOnClick = false,
-            Checked = _settings.AutoRefreshEnabled,
-        };
-
         // A WinForms timer ticks on the UI thread, so a refresh needs no marshalling and cannot
         // overlap the message pump's other work.
         _autoRefreshTimer = new System.Windows.Forms.Timer
@@ -79,7 +64,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         _autoRefreshTimer.Tick += (_, _) => OnAutoRefreshTick();
         _autoRefreshTimer.Enabled = _settings.AutoRefreshEnabled;
 
-        var aboutItem = new ToolStripMenuItem($"&About {AppInfo.DisplayName}", null, (_, _) => ShowAbout());
+        var settingsItem = new ToolStripMenuItem("Se&ttings…", null, (_, _) => ShowSettings());
         var exitItem = new ToolStripMenuItem("E&xit", null, (_, _) => ExitApplication());
 
         var menu = new ContextMenuStrip();
@@ -88,11 +73,7 @@ public sealed class TrayApplicationContext : ApplicationContext
             refreshItem,
             showResultsItem,
             new ToolStripSeparator(),
-            _startWithWindowsItem,
-            _refreshOnStartupItem,
-            _autoRefreshItem,
-            new ToolStripSeparator(),
-            aboutItem,
+            settingsItem,
             exitItem,
         });
 
@@ -115,6 +96,25 @@ public sealed class TrayApplicationContext : ApplicationContext
         {
             _log.Info("Running the startup refresh.");
             RunRefresh(RefreshTrigger.Manual);
+        }
+
+        _shutdownListener = new ShutdownListenerWindow(Shutdown);
+        _shutdownListener.Show();
+
+        _updateTimer.Interval = (int)TimeSpan.FromMinutes(15).TotalMilliseconds;
+        _updateTimer.Tick += async (_, _) =>
+        {
+            if (DateTime.UtcNow >= _nextUpdateCheckUtc)
+            {
+                await CheckForUpdatesAsync(manual: false);
+                _nextUpdateCheckUtc = UpdateSchedule.NextCheck(DateTime.UtcNow, _settings.CheckFrequency);
+            }
+        };
+
+        ApplyUpdateSchedule();
+        if (_settings.CheckFrequency != UpdateCheckFrequency.Never)
+        {
+            _ = CheckForUpdatesAsync(manual: false);
         }
     }
 
@@ -207,67 +207,38 @@ public sealed class TrayApplicationContext : ApplicationContext
         _resultsForm.Activate();
     }
 
-    private void ShowAbout()
+    private void ShowSettings(string? initialTab = null)
     {
-        if (_aboutForm is { IsDisposed: false })
+        if (_settingsForm is { IsDisposed: false })
         {
-            _aboutForm.Show();
-            _aboutForm.WindowState = FormWindowState.Normal;
-            _aboutForm.Activate();
+            _settingsForm.Show();
+            _settingsForm.WindowState = FormWindowState.Normal;
+            if (initialTab != null) _settingsForm.SelectTab(initialTab);
+            _settingsForm.Activate();
             return;
         }
 
-        _aboutForm = new AboutForm(_icon);
-        _aboutForm.FormClosed += (_, _) => _aboutForm = null;
-        _aboutForm.Show();
-        _aboutForm.Activate();
+        _settingsForm = new SettingsForm(
+            _icon,
+            _settings,
+            settings =>
+            {
+                _settings = settings;
+                _settingsStore.Save(_settings);
+                ApplyUpdateSchedule();
+                _autoRefreshTimer.Interval = (int)_settings.AutoRefreshInterval.TotalMilliseconds;
+                _autoRefreshTimer.Enabled = _settings.AutoRefreshEnabled;
+                _notifyIcon.Text = TooltipText();
+            },
+            () => CheckForUpdatesAsync(manual: true),
+            _startupManager);
+        if (initialTab != null) _settingsForm.SelectTab(initialTab);
+        _settingsForm.FormClosed += (_, _) => _settingsForm = null;
+        _settingsForm.Show();
+        _settingsForm.Activate();
     }
 
-    private void ToggleStartWithWindows()
-    {
-        var desired = !_startupManager.IsEnabled;
-
-        if (_startupManager.TrySetEnabled(desired))
-        {
-            _startWithWindowsItem.Checked = desired;
-            return;
-        }
-
-        _startWithWindowsItem.Checked = _startupManager.IsEnabled;
-
-        // The dialog pumps messages, so hold off the auto-refresh timer while it is up.
-        _busy = true;
-
-        try
-        {
-            MessageBox.Show("Could not change the startup setting. See the log for details.", AppInfo.DisplayName,
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        }
-        finally
-        {
-            _busy = false;
-        }
-    }
-
-    private void ToggleRefreshOnStartup()
-    {
-        _settings.RunRefreshOnStartup = !_settings.RunRefreshOnStartup;
-        _refreshOnStartupItem.Checked = _settings.RunRefreshOnStartup;
-        _settingsStore.Save(_settings);
-    }
-
-    private void ToggleAutoRefresh()
-    {
-        _settings.AutoRefreshEnabled = !_settings.AutoRefreshEnabled;
-        _autoRefreshItem.Checked = _settings.AutoRefreshEnabled;
-        _autoRefreshTimer.Enabled = _settings.AutoRefreshEnabled;
-        _notifyIcon.Text = TooltipText();
-        _settingsStore.Save(_settings);
-
-        _log.Info(_settings.AutoRefreshEnabled
-            ? $"Auto-refresh turned on, every {DescribeInterval()}."
-            : "Auto-refresh turned off.");
-    }
+    private void ShowAbout() => ShowSettings("About");
 
     /// <summary>"minute" or "N minutes", from the clamped interval the timer actually uses.</summary>
     private string DescribeInterval()
@@ -289,6 +260,102 @@ public sealed class TrayApplicationContext : ApplicationContext
         return withInterval.Length <= 63 ? withInterval : text;
     }
 
+    public void Shutdown()
+    {
+        _log.Info("Shutdown requested by listener.");
+        ExitApplication();
+    }
+
+    private void ApplyUpdateSchedule()
+    {
+        _settings.CheckFrequency = UpdateSchedule.Normalize(_settings.CheckFrequency);
+        _updateTimer.Stop();
+        _nextUpdateCheckUtc = UpdateSchedule.NextCheck(DateTime.UtcNow, _settings.CheckFrequency);
+        if (_settings.CheckFrequency != UpdateCheckFrequency.Never) _updateTimer.Start();
+    }
+
+    private async Task CheckForUpdatesAsync(bool manual)
+    {
+        if (_checkingUpdate || (!manual && _settings.CheckFrequency == UpdateCheckFrequency.Never)) return;
+        _checkingUpdate = true;
+        try
+        {
+            var update = await _updates.CheckAsync(Version.Parse(Changelog.MarketingVersion), _updateCancellation.Token);
+            _settings.LastUpdateCheckUtc = DateTime.UtcNow;
+            _settingsStore.Save(_settings);
+
+            if (update is null)
+            {
+                if (manual) MessageBox.Show($"You are running version {Changelog.MarketingVersion}.\n\nNo newer installer version is available.", AppInfo.DisplayName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            if (!manual && _lastOfferedUpdate == update.Version) return;
+            _lastOfferedUpdate = update.Version;
+            ShowUpdateDialog(update);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            _log.Error("Update check failed.", ex);
+            if (manual) MessageBox.Show($"Could not check for updates. Please try again later.\n\n{ex.Message}", AppInfo.DisplayName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        finally { _checkingUpdate = false; }
+    }
+
+    private void ShowUpdateDialog(AppUpdate update)
+    {
+        using var dialog = new Form
+        {
+            Text = $"Update {AppInfo.DisplayName} (v{Changelog.MarketingVersion})",
+            StartPosition = FormStartPosition.CenterScreen,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            ShowInTaskbar = true,
+            ClientSize = new Size(470, 200),
+            Icon = _icon,
+        };
+        var message = new Label
+        {
+            Text = $"Version {update.Version} is available. You have {Changelog.MarketingVersion}.\n\nUpdate will download and open the installer. Setup will close the app and restart it after updating.",
+            Location = new Point(18, 18),
+            Size = new Size(434, 115),
+        };
+        var install = new Button { Text = "Update", Location = new Point(268, 152), Size = new Size(88, 30) };
+        var later = new Button { Text = "Later", Location = new Point(364, 152), Size = new Size(88, 30), DialogResult = DialogResult.Cancel };
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_updateCancellation.Token);
+        cancellation.CancelAfter(TimeSpan.FromMinutes(10));
+        dialog.FormClosing += (_, _) => cancellation.Cancel();
+        install.Click += async (_, _) =>
+        {
+            install.Enabled = false;
+            message.Text = "Downloading and verifying the installer…";
+            try
+            {
+                var cache = Path.Combine(AppPaths.Root, "Updates");
+                var installer = await _updates.DownloadAsync(update, cache, cancellation.Token);
+                if (dialog.IsDisposed) return;
+                _ = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = installer,
+                    UseShellExecute = true,
+                }) ?? throw new InvalidOperationException("Windows could not open the installer.");
+                dialog.Close();
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+            catch (Exception ex)
+            {
+                if (dialog.IsDisposed) return;
+                message.Text = $"Update failed. Please try again.\n\n{ex.Message}";
+                install.Enabled = true;
+            }
+        };
+        dialog.Controls.AddRange(new Control[] { message, install, later });
+        dialog.AcceptButton = install;
+        dialog.CancelButton = later;
+        dialog.ShowDialog();
+    }
+
     private void ExitApplication()
     {
         _log.Info("Exiting.");
@@ -301,13 +368,19 @@ public sealed class TrayApplicationContext : ApplicationContext
     {
         if (disposing)
         {
+            _updateTimer.Stop();
+            _updateTimer.Dispose();
+            _updateCancellation.Cancel();
+            _updateCancellation.Dispose();
+            _updates.Dispose();
+            _shutdownListener.Dispose();
             _autoRefreshTimer.Stop();
             _autoRefreshTimer.Dispose();
             _notifyIcon.Visible = false;
             _notifyIcon.ContextMenuStrip?.Dispose();
             _notifyIcon.Dispose();
             _resultsForm?.Dispose();
-            _aboutForm?.Dispose();
+            _settingsForm?.Dispose();
             _icon.Dispose();
         }
 

@@ -25,6 +25,15 @@ public sealed class AppSettings
     /// <summary>Leave entries alone when their executable is confirmed missing.</summary>
     public bool SkipMissingExecutables { get; set; } = true;
 
+    /// <summary>How often Tray Keeper checks GitHub for releases.</summary>
+    public UpdateCheckFrequency CheckFrequency { get; set; } = UpdateCheckFrequency.Daily;
+
+    /// <summary>Last time an update check was performed in UTC.</summary>
+    public DateTime? LastUpdateCheckUtc { get; set; }
+
+    /// <summary>A release version the user chose to skip for background notifications.</summary>
+    public string? SkippedUpdateVersion { get; set; }
+
     /// <summary>
     /// The interval the timer actually uses. settings.json is hand-editable, so the stored value is
     /// clamped — zero or a negative number would throw when assigned to a timer.

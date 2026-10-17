@@ -9,7 +9,7 @@ namespace TrayKeeper.Services;
 /// </summary>
 public sealed class SingleInstance : IDisposable
 {
-    private const string MutexName = @"Local\TrayKeeper.SingleInstance";
+    private const string MutexName = @"TrayKeeper.Singleton";
     private const string SignalName = @"Local\TrayKeeper.ActivateSignal";
 
     private readonly Mutex _mutex;
