@@ -28,10 +28,14 @@ one you already enabled, and enables it.
 
 ## Install
 
-Download **[TrayKeeper.exe](https://github.com/alexlvcom/TrayKeeper/releases/latest/download/TrayKeeper.exe)**
-and double-click it. It is a single self-contained executable — no .NET runtime
-needed, no installer. It runs without administrator privileges and never asks for
-elevation.
+Download **[TrayKeeper-Setup.exe](https://github.com/alexlvcom/TrayKeeper/releases/latest/download/TrayKeeper-Setup.exe)**
+and run it. Setup installs to `%LOCALAPPDATA%\Programs\Tray Keeper` without
+administrator privileges and preserves your settings and backups during upgrades.
+
+The app checks for updates at startup and daily by default. Choose the interval in
+Settings, or check manually in About. **Update** downloads and verifies the
+installer. The download timeout starts on that click; a timeout shows an error and
+lets you retry.
 
 The exe is unsigned, so Windows may show a SmartScreen warning on first run. See
 [Install and first run](docs/GUIDE.md#install-and-first-run) for what that means
