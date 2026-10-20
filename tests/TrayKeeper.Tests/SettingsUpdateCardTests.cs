@@ -50,6 +50,46 @@ public class SettingsUpdateCardTests
     }
 
     [Fact]
+    public void TheTitleRowShowsTheVersionWithoutBracketsAndClickingItOpensUpdates()
+    {
+        OnSta(() =>
+        {
+            var latest = UpdateStatus.Latest("1.4.0", DateTime.Now);
+            var window = new SettingsWindow(new AppSettings(), _ => null,
+                () => Task.FromResult(latest), startupManager: null, latest, () => { })
+            {
+                WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000, ShowActivated = false,
+            };
+            try
+            {
+                window.Show(); // The custom title row is built when the window handle is created.
+                Assert.Equal("Tray Keeper Settings", window.Title);
+                Assert.Equal("v1.4.0", window.TitleVersion);
+
+                var version = FindByAutomationName(window, "Show updates");
+                Assert.NotNull(version);
+                Assert.Equal("v1.4.0", version!.Content);
+
+                window.Tabs.SelectedIndex = 0;
+                version.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                Assert.Same(window.UpdatesTab, window.Tabs.SelectedItem);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    private static System.Windows.Controls.Button? FindByAutomationName(DependencyObject root, string name)
+    {
+        foreach (var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
+        {
+            if (child is System.Windows.Controls.Button button && System.Windows.Automation.AutomationProperties.GetName(button) == name)
+                return button;
+            if (FindByAutomationName(child, name) is { } found) return found;
+        }
+        return null;
+    }
+
+    [Fact]
     public void SettingsOpensOnTheLatestVersionWithoutAnUpdateAction()
     {
         OnSta(() =>

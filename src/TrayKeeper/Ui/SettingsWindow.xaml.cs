@@ -87,7 +87,10 @@ public partial class SettingsWindow : ThemedWindow
         _startupManager = startupManager;
         _startupWasEnabled = startupManager?.IsEnabled ?? false;
 
-        Title = $"{AppInfo.DisplayName} Settings (v{Changelog.MarketingVersion})";
+        // The version sits at the right of the title row; clicking it opens Updates.
+        Title = $"{AppInfo.DisplayName} Settings";
+        TitleVersion = $"v{Changelog.MarketingVersion}";
+        VersionClick += (_, _) => Tabs.SelectedItem = UpdatesTab;
 
         if (startupManager is null) StartWithWindowsRow.Visibility = Visibility.Collapsed;
         StartWithWindows.IsChecked = _startupWasEnabled;
