@@ -15,7 +15,7 @@ a hidden entry for it, and your icon silently disappears:
 Tray Keeper finds that hidden entry, confirms it belongs to the same application as
 one you already enabled, and enables it.
 
-![Tray Keeper tray menu](TrayKeeper.jpg)
+![Tray Keeper tray menu](TrayKeeper.png)
 
 ## Features
 
