@@ -39,6 +39,28 @@ public class UpdateResultTests
         Assert.All(all, s => Assert.DoesNotContain("installer", s.Title + s.Detail, StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public void SettingsOpensOnTheLastChecksActualOutcome()
+    {
+        var newer = UpdateStatus.Newer("1.4.0", new Version(1, 4, 1), CheckedAt);
+        var failed = UpdateStatus.CheckFailed("1.4.0", "offline");
+        var latest = UpdateStatus.Latest("1.4.0", CheckedAt);
+
+        Assert.Equal("Version 1.4.1 is available", UpdateStatus.OnOpen(newer, CheckedAt, "1.4.0").Title);
+        Assert.Equal(UpdateState.Failed, UpdateStatus.OnOpen(failed, CheckedAt, "1.4.0").State);
+        Assert.Equal("You're running the latest version (v1.4.0)", UpdateStatus.OnOpen(latest, CheckedAt, "1.4.0").Title);
+    }
+
+    [Fact]
+    public void BeforeAnyCheckFinishesSettingsDoesNotClaimTheLatestVersion()
+    {
+        var status = UpdateStatus.OnOpen(lastResult: null, CheckedAt, "1.4.0");
+
+        Assert.Equal(UpdateState.NotChecked, status.State);
+        Assert.DoesNotContain("latest", status.Title, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Last checked 2026-10-20 13:30", status.Detail);
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

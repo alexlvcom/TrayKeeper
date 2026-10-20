@@ -39,6 +39,9 @@ public sealed class TrayApplicationContext : ApplicationContext
     private DateTime _nextUpdateCheckUtc = DateTime.MaxValue;
     private bool _checkingUpdate;
     private Version? _lastOfferedUpdate;
+    // The last finished check's outcome this session, so Settings opens on what it actually found.
+    private UpdateStatus? _lastUpdateResult;
+    private AppUpdate? _lastFoundUpdate;
 
     /// <summary>True while a refresh runs or a dialog this class opened is on screen.</summary>
     private bool _busy;
@@ -251,7 +254,9 @@ public sealed class TrayApplicationContext : ApplicationContext
                 return null;
             },
             () => CheckForUpdatesAsync(manual: true),
-            _startupManager);
+            _startupManager,
+            _lastUpdateResult,
+            () => { if (_lastFoundUpdate is { } found) ShowUpdateDialog(found); });
         if (initialTab != null) _settingsWindow.SelectTab(initialTab);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         WinFormsHosting.ShowModeless(_settingsWindow);
@@ -313,10 +318,11 @@ public sealed class TrayApplicationContext : ApplicationContext
             _settings.LastUpdateCheckUtc = DateTime.UtcNow;
             _settingsStore.Save(_settings);
             var checkedAt = DateTime.Now;
+            _lastFoundUpdate = update;
 
-            if (update is null) return UpdateStatus.Latest(current, checkedAt);
+            if (update is null) return _lastUpdateResult = UpdateStatus.Latest(current, checkedAt);
 
-            var available = UpdateStatus.Newer(current, update.Version, checkedAt);
+            var available = _lastUpdateResult = UpdateStatus.Newer(current, update.Version, checkedAt);
             if (!OffersUpdateDialog(update.Version, manual, _lastOfferedUpdate)) return available;
             _lastOfferedUpdate = update.Version;
             ShowUpdateDialog(update);
@@ -329,7 +335,8 @@ public sealed class TrayApplicationContext : ApplicationContext
         catch (Exception ex)
         {
             _log.Error("Update check failed.", ex);
-            return UpdateStatus.CheckFailed(current, ex.Message);
+            _lastFoundUpdate = null;
+            return _lastUpdateResult = UpdateStatus.CheckFailed(current, ex.Message);
         }
         finally { _checkingUpdate = false; }
     }

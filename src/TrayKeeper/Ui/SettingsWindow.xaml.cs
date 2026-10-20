@@ -33,6 +33,16 @@ public sealed record UpdateStatus(UpdateState State, string Title, string Detail
     public static UpdateStatus Newer(string current, Version available, DateTime checkedLocal) =>
         new(UpdateState.Available, $"Version {available.ToString(3)} is available",
             $"You have v{current} · Last checked {checkedLocal:yyyy-MM-dd HH:mm}");
+
+    /// <summary>
+    /// What the card shows when Settings opens: the last check's own outcome from this session, or,
+    /// before any check has finished, only when one last ran (no claim about the outcome).
+    /// </summary>
+    public static UpdateStatus OnOpen(UpdateStatus? lastResult, DateTime? lastCheckLocal, string current) =>
+        lastResult ?? new UpdateStatus(UpdateState.NotChecked, $"Running v{current}",
+            lastCheckLocal is { } checkedAt
+                ? $"Last checked {checkedAt:yyyy-MM-dd HH:mm} · Use Check for updates to look now"
+                : "Not checked yet · Use Check for updates to look now");
 }
 
 /// <summary>
@@ -52,6 +62,8 @@ public partial class SettingsWindow : ThemedWindow
     private readonly AppSettings _original;
     private readonly Func<AppSettings, string?> _onSave;
     private readonly Func<Task<UpdateStatus>> _onCheckForUpdates;
+    private readonly Action? _onInstallUpdate;
+    private readonly UpdateStatus? _lastUpdateResult;
     private readonly StartupManager? _startupManager;
     private readonly bool _startupWasEnabled;
     private bool _saved;
@@ -61,13 +73,17 @@ public partial class SettingsWindow : ThemedWindow
         AppSettings draft,
         Func<AppSettings, string?> onSave,
         Func<Task<UpdateStatus>> onCheckForUpdates,
-        StartupManager? startupManager)
+        StartupManager? startupManager,
+        UpdateStatus? lastUpdateResult = null,
+        Action? onInstallUpdate = null)
     {
         InitializeComponent();
         _draft = draft;
         _original = draft.Clone();
         _onSave = onSave;
         _onCheckForUpdates = onCheckForUpdates;
+        _onInstallUpdate = onInstallUpdate;
+        _lastUpdateResult = lastUpdateResult;
         _startupManager = startupManager;
         _startupWasEnabled = startupManager?.IsEnabled ?? false;
 
@@ -91,10 +107,7 @@ public partial class SettingsWindow : ThemedWindow
         Interval.TextChanged += (_, _) => OnEdited();
         Frequency.SelectionChanged += (_, _) => OnEdited();
 
-        ShowUpdateStatus(draft.LastUpdateCheckUtc is { } checkedAt
-            ? UpdateStatus.Latest(Changelog.MarketingVersion, checkedAt.ToLocalTime())
-            : new UpdateStatus(UpdateState.NotChecked, "Not checked yet",
-                $"Version {Changelog.MarketingVersion} · Use Check for updates to look now"));
+        ShowUpdateStatus(UpdateStatus.OnOpen(_lastUpdateResult, draft.LastUpdateCheckUtc?.ToLocalTime(), Changelog.MarketingVersion));
 
         BuildAbout();
         BuildDiagnostics();
@@ -252,10 +265,18 @@ public partial class SettingsWindow : ThemedWindow
         }
     }
 
+    private void InstallUpdate_Click(object sender, RoutedEventArgs e) => _onInstallUpdate?.Invoke();
+
+    /// <summary>The status card currently shown, for tests.</summary>
+    internal UpdateStatus? ShownUpdateStatus { get; private set; }
+
     private void ShowUpdateStatus(UpdateStatus status)
     {
+        ShownUpdateStatus = status;
         UpdateTitle.Text = status.Title;
         UpdateDetail.Text = status.Detail;
+        InstallUpdateButton.Visibility = status.State == UpdateState.Available && _onInstallUpdate is not null
+            ? Visibility.Visible : Visibility.Collapsed;
         UpdateDot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, status.State switch
         {
             UpdateState.Failed => "Danger",
