@@ -70,6 +70,22 @@ public sealed class ThemeTests : IDisposable
         Assert.DoesNotContain("<InvariantGlobalization>true</InvariantGlobalization>", project);
     }
 
+    [Fact]
+    public void NoWindowTitleCarriesABracketedVersion()
+    {
+        // Versions belong at the right of the title row (TitleVersion), never bracketed into a title.
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "src", "TrayKeeper")))
+            directory = directory.Parent;
+        Assert.NotNull(directory);
+
+        var offenders = Directory.GetFiles(Path.Combine(directory!.FullName, "src", "TrayKeeper"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
+            .Where(f => System.Text.RegularExpressions.Regex.IsMatch(File.ReadAllText(f), @"Title(\s*=>|\s*=)\s*\$""[^""]*\(v\{"))
+            .Select(Path.GetFileName);
+        Assert.Empty(offenders);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);
