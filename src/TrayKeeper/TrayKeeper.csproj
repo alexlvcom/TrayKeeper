@@ -55,4 +55,7 @@
     </EmbeddedResource>
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="TrayKeeper.Tests" />
+  </ItemGroup>
 </Project>

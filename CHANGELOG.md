@@ -10,6 +10,7 @@ All notable changes to Tray Keeper are documented here. Format follows Keep a Ch
 - Fixed the running version: 1.3.2 still reported itself as 1.3.1 in the title bar and About, so the update check could offer 1.3.2 again. The version and release notes now come from CHANGELOG.md alone.
 
 ### Other updates
+- Setup and uninstall now close a running copy cleanly. Before, the hidden window they ask to close never existed, so setup force-closed the app after a delay.
 - Settings now fits its window without scrolling, with separate Appearance and Diagnostics tabs.
 - Last results shows the report as sections for enabled entries, skipped look-alikes, matching sources and errors.
 - The update dialog shows download progress and offers Try again after a timeout or failure.
