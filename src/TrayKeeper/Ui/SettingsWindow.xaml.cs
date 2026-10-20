@@ -20,7 +20,20 @@ public enum UpdateState
 }
 
 /// <summary>What the Updates tab's status card shows after a check.</summary>
-public sealed record UpdateStatus(UpdateState State, string Title, string Detail);
+public sealed record UpdateStatus(UpdateState State, string Title, string Detail)
+{
+    /// <summary>The app is current. Shown in place in the card; a manual check opens no dialog for it.</summary>
+    public static UpdateStatus Latest(string current, DateTime checkedLocal) =>
+        new(UpdateState.UpToDate, $"You're running the latest version (v{current})", $"Last checked {checkedLocal:yyyy-MM-dd HH:mm}");
+
+    /// <summary>The check failed. Shown in place in the card with its reason; no dialog.</summary>
+    public static UpdateStatus CheckFailed(string current, string reason) =>
+        new(UpdateState.Failed, "Could not check for updates", $"Running v{current} · {reason}");
+
+    public static UpdateStatus Newer(string current, Version available, DateTime checkedLocal) =>
+        new(UpdateState.Available, $"Version {available.ToString(3)} is available",
+            $"You have v{current} · Last checked {checkedLocal:yyyy-MM-dd HH:mm}");
+}
 
 /// <summary>
 /// Settings: Preferences, Appearance, Updates, About and Diagnostics tabs over one draft copy.
@@ -79,8 +92,7 @@ public partial class SettingsWindow : ThemedWindow
         Frequency.SelectionChanged += (_, _) => OnEdited();
 
         ShowUpdateStatus(draft.LastUpdateCheckUtc is { } checkedAt
-            ? new UpdateStatus(UpdateState.UpToDate, $"{AppInfo.DisplayName} is up to date",
-                $"Version {Changelog.MarketingVersion} · Last checked {checkedAt.ToLocalTime():yyyy-MM-dd HH:mm}")
+            ? UpdateStatus.Latest(Changelog.MarketingVersion, checkedAt.ToLocalTime())
             : new UpdateStatus(UpdateState.NotChecked, "Not checked yet",
                 $"Version {Changelog.MarketingVersion} · Use Check for updates to look now"));
 

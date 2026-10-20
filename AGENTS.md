@@ -24,7 +24,7 @@
 
 - Default to checking immediately on startup and daily while running. Settings must support hourly, daily, weekly, calendar-monthly, and never. Never disables startup and scheduled checks while leaving manual checks available. Keep checks asynchronous and prevent overlapping checks or downloads.
 - Offer Update/Later for a newer stable release with `TrayKeeper-Setup.exe`. Download only after Update is clicked. Verify the GitHub SHA-256 digest or published `SHA256SUMS.txt` before launching setup.
-- Keep background failures quiet. Manual Check for updates lives on the Settings Updates tab, reporting results to the user.
+- Keep background failures quiet. Manual Check for updates lives on the Settings Updates tab and reports in place in its status card: "You're running the latest version (vN.N.N)" or the failure reason, with no dialog. Only a newer release opens the Update/Later dialog. Never use "No newer installer version is available" wording.
 - Run tests with `dotnet test tests/TrayKeeper.Tests/TrayKeeper.Tests.csproj -c Release`.
 
 ## Settings save model

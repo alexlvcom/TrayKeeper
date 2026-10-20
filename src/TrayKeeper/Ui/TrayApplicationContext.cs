@@ -289,7 +289,14 @@ public sealed class TrayApplicationContext : ApplicationContext
         if (_settings.CheckFrequency != UpdateCheckFrequency.Never) _updateTimer.Start();
     }
 
-    /// <summary>Checks GitHub. Manual checks report every outcome; automatic ones only offer an update.</summary>
+    /// <summary>
+    /// Only a newer release opens the Update dialog: a manual check offers it every time, an automatic
+    /// one once per version. Being current or failing never opens a dialog; the Updates card says so.
+    /// </summary>
+    internal static bool OffersUpdateDialog(Version? available, bool manual, Version? lastOffered) =>
+        available is not null && (manual || available != lastOffered);
+
+    /// <summary>Checks GitHub. Manual checks (Settings → Updates) report every outcome in the status card.</summary>
     private async Task<UpdateStatus> CheckForUpdatesAsync(bool manual)
     {
         var current = Changelog.MarketingVersion;
@@ -305,30 +312,24 @@ public sealed class TrayApplicationContext : ApplicationContext
             var update = await _updates.CheckAsync(Version.Parse(current), _updateCancellation.Token);
             _settings.LastUpdateCheckUtc = DateTime.UtcNow;
             _settingsStore.Save(_settings);
-            var checkedAt = $"Last checked {DateTime.Now:yyyy-MM-dd HH:mm}";
+            var checkedAt = DateTime.Now;
 
-            if (update is null)
-            {
-                if (manual) MessageDialog.Show($"You are running version {current}.\n\nNo newer installer version is available.", MessageKind.Info);
-                return new UpdateStatus(UpdateState.UpToDate, $"{AppInfo.DisplayName} is up to date", $"Version {current} · {checkedAt}");
-            }
+            if (update is null) return UpdateStatus.Latest(current, checkedAt);
 
-            var available = new UpdateStatus(UpdateState.Available, $"Version {update.Version.ToString(3)} is available",
-                $"You have {current} · {checkedAt}");
-            if (!manual && _lastOfferedUpdate == update.Version) return available;
+            var available = UpdateStatus.Newer(current, update.Version, checkedAt);
+            if (!OffersUpdateDialog(update.Version, manual, _lastOfferedUpdate)) return available;
             _lastOfferedUpdate = update.Version;
             ShowUpdateDialog(update);
             return available;
         }
         catch (OperationCanceledException)
         {
-            return new UpdateStatus(UpdateState.Failed, "Update check stopped", $"Version {current}");
+            return new UpdateStatus(UpdateState.Failed, "Update check stopped", $"Running v{current}");
         }
         catch (Exception ex)
         {
             _log.Error("Update check failed.", ex);
-            if (manual) MessageDialog.Show($"Could not check for updates. Please try again later.\n\n{ex.Message}", MessageKind.Warning);
-            return new UpdateStatus(UpdateState.Failed, "Could not check for updates", $"Version {current} · {ex.Message}");
+            return UpdateStatus.CheckFailed(current, ex.Message);
         }
         finally { _checkingUpdate = false; }
     }
