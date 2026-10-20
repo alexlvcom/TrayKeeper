@@ -64,11 +64,11 @@ public class SettingsUpdateCardTests
             {
                 window.Show(); // The custom title row is built when the window handle is created.
                 Assert.Equal("Tray Keeper Settings", window.Title);
-                Assert.Equal("v1.4.0", window.TitleVersion);
+                Assert.Equal($"v{Changelog.MarketingVersion}", window.TitleVersion);
 
                 var version = FindByAutomationName(window, "Show updates");
                 Assert.NotNull(version);
-                Assert.Equal("v1.4.0", version!.Content);
+                Assert.Equal($"v{Changelog.MarketingVersion}", version!.Content);
 
                 window.Tabs.SelectedIndex = 0;
                 version.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
