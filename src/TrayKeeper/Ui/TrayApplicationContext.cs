@@ -356,8 +356,13 @@ public sealed class TrayApplicationContext : ApplicationContext
         ExitThread();
     }
 
+    private bool _disposed;
+
     protected override void Dispose(bool disposing)
     {
+        // A crash path can dispose twice (ExitThread, then Program.Main); cancelling a disposed source throws.
+        if (_disposed) return;
+        _disposed = true;
         if (disposing)
         {
             _updateTimer.Stop();

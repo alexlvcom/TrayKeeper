@@ -57,6 +57,19 @@ public sealed class ThemeTests : IDisposable
         Assert.Equal(AppTheme.Light, running.Theme);
     }
 
+    [Fact]
+    public void TheAppKeepsCultureDataForWpfTextLayout()
+    {
+        // WPF creates real cultures when it measures text; invariant globalization crashed the first TextBox.
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "src", "TrayKeeper", "TrayKeeper.csproj")))
+            directory = directory.Parent;
+        Assert.NotNull(directory);
+
+        var project = File.ReadAllText(Path.Combine(directory!.FullName, "src", "TrayKeeper", "TrayKeeper.csproj"));
+        Assert.DoesNotContain("<InvariantGlobalization>true</InvariantGlobalization>", project);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);

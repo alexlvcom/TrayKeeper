@@ -33,7 +33,9 @@
          non-concurrent workstation GC keeps the resident set and background threads minimal. -->
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
-    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- WPF text layout creates real cultures (for example "en") when it measures fonts; invariant
+         globalization makes the first TextBox throw and crash the app. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
