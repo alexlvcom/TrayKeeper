@@ -10,6 +10,7 @@ All notable changes to Tray Keeper are documented here. Format follows Keep a Ch
 - Fixed the running version: 1.3.2 still reported itself as 1.3.1 in the title bar and About, so the update check could offer 1.3.2 again. The version and release notes now come from CHANGELOG.md alone.
 
 ### Other updates
+- A taskbar pin made from an older copy of the app now opens the installed version instead.
 - Check for updates in Settings shows its result in the Updates card: "You're running the latest version (v1.4.0)" or why the check failed, without a pop-up. Only a newer release opens the Update dialog. When Settings opens, the card shows what the last check actually found, including an Update button for a newer release.
 - Setup and uninstall now close a running copy cleanly. Before, the hidden window they ask to close never existed, so setup force-closed the app after a delay.
 - Settings now fits its window without scrolling, with separate Appearance and Diagnostics tabs.

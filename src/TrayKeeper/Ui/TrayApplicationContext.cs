@@ -64,6 +64,8 @@ public sealed class TrayApplicationContext : ApplicationContext
         _icon = AppIcon.Load();
 
         ThemeManager.Initialize(AppInfo.DisplayName, Accent, _settings.Theme);
+        // A pin made from an old portable copy keeps launching it; point pins at this installed EXE.
+        _ = Task.Run(() => ShortcutRepair.RepairTaskbarPins());
         ThemeManager.WindowIcon = WinFormsHosting.ToImageSource(_icon);
 
         // A WinForms timer ticks on the UI thread, so a refresh needs no marshalling and cannot
