@@ -1,3 +1,4 @@
+using AlexLV.WindowsUi;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
@@ -9,7 +10,7 @@ namespace TrayKeeper.Ui;
 /// Offers a newer release: Update downloads, verifies and opens setup; Later dismisses it. A
 /// timed-out or failed download keeps the window open so Update can be tried again.
 /// </summary>
-public partial class UpdateWindow : Window
+public partial class UpdateWindow : ThemedWindow
 {
     private readonly AppUpdate _update;
     private readonly UpdateService _updates;

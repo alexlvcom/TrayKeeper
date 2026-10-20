@@ -47,7 +47,7 @@ public static class MessageDialog
         bool defaultIsNegative = false,
         string? title = null)
     {
-        var window = new Window
+        var window = new ThemedWindow
         {
             Title = title ?? ThemeManager.AppName,
             Width = 470,

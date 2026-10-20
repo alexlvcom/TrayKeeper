@@ -27,7 +27,7 @@ public sealed record UpdateStatus(UpdateState State, string Title, string Detail
 /// Nothing is stored until Save; Cancel, Esc or the title-bar X discards the draft. The theme is the
 /// one live preview: it applies at once and is restored on any close without a successful Save.
 /// </summary>
-public partial class SettingsWindow : Window
+public partial class SettingsWindow : ThemedWindow
 {
     private static readonly UpdateCheckFrequency[] Frequencies =
     {

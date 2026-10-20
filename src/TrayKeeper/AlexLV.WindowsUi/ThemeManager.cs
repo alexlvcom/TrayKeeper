@@ -197,6 +197,17 @@ public static class ThemeManager
         _ = DwmSetWindowAttribute(handle, DwmTextColor, ref text, sizeof(int));
     }
 
+    /// <summary>
+    /// Hides or reveals a shown window without changing its visibility state (DWM cloaking), so it
+    /// can finish its first themed frame off screen. Returns whether DWM accepted the request.
+    /// </summary>
+    public static bool Cloak(IntPtr handle, bool cloak)
+    {
+        if (handle == IntPtr.Zero) return false;
+        var value = cloak ? 1 : 0;
+        return DwmSetWindowAttribute(handle, DwmCloak, ref value, sizeof(int)) == 0;
+    }
+
     /// <summary>Rounds a popup's corners on Windows 11 (tray menus, dropdowns).</summary>
     public static void RoundCorners(IntPtr handle)
     {
@@ -206,6 +217,7 @@ public static class ThemeManager
 
     private static int ToColorRef(Color color) => color.R | (color.G << 8) | (color.B << 16);
 
+    private const int DwmCloak = 13;
     private const int DwmUseImmersiveDarkMode = 20;
     private const int DwmWindowCornerPreference = 33;
     private const int DwmCaptionColor = 35;

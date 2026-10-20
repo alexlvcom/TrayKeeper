@@ -1,9 +1,10 @@
+using AlexLV.WindowsUi;
 using System.Windows;
 
 namespace TrayKeeper.Ui;
 
 /// <summary>Every release from CHANGELOG.md, newest first.</summary>
-public partial class HistoryWindow : Window
+public partial class HistoryWindow : ThemedWindow
 {
     public HistoryWindow()
     {

@@ -11,7 +11,7 @@ namespace TrayKeeper.Ui;
 /// Report of the last refresh as structured sections, with an undo action and an explicit —
 /// never automatic — Explorer restart.
 /// </summary>
-public partial class ResultsWindow : Window
+public partial class ResultsWindow : ThemedWindow
 {
     private readonly RefreshService _refreshService;
     private readonly ResultStore _resultStore;

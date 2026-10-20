@@ -1,4 +1,5 @@
-<Window x:Class="TrayKeeper.Ui.HistoryWindow"
+<ui:ThemedWindow x:Class="TrayKeeper.Ui.HistoryWindow"
+        xmlns:ui="clr-namespace:AlexLV.WindowsUi"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Style="{StaticResource KitWindow}"
@@ -14,4 +15,4 @@
       </ScrollViewer>
     </Border>
   </DockPanel>
-</Window>
+</ui:ThemedWindow>
