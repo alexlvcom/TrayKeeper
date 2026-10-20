@@ -78,6 +78,33 @@ public class SettingsUpdateCardTests
         });
     }
 
+    [Fact]
+    public void SelectingATabNeverChangesItsWidth()
+    {
+        // The selected header is semibold; a width change would shift every tab after it.
+        OnSta(() =>
+        {
+            var latest = UpdateStatus.Latest("1.4.0", DateTime.Now);
+            var window = new SettingsWindow(new AppSettings(), _ => null,
+                () => Task.FromResult(latest), startupManager: null, latest, () => { })
+            {
+                WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000, ShowActivated = false,
+            };
+            try
+            {
+                window.Show();
+                var tabs = window.Tabs.Items.Cast<System.Windows.Controls.TabItem>().ToList();
+                double[] Widths() { window.UpdateLayout(); return tabs.Select(t => t.ActualWidth).ToArray(); }
+
+                window.Tabs.SelectedIndex = 0;
+                var first = Widths();
+                window.Tabs.SelectedIndex = tabs.Count - 1;
+                Assert.Equal(first, Widths());
+            }
+            finally { window.Close(); }
+        });
+    }
+
     private static System.Windows.Controls.Button? FindByAutomationName(DependencyObject root, string name)
     {
         foreach (var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
