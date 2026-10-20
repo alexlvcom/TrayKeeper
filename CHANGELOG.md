@@ -2,6 +2,15 @@
 
 All notable changes to Tray Keeper are documented here. Format follows Keep a Changelog; versions follow Semantic Versioning.
 
+## [1.3.2] - 2026-10-20
+
+### Main changes
+- Settings now has a Save / Cancel footer on every tab, matching the other AlexLV Windows apps. Changes are drafts until Save, which applies them at once without a restart; Cancel, Esc, or closing the window discards them. This includes the update schedule and Start with Windows.
+- Save reports when settings cannot be written and keeps the window open with your changes, instead of failing silently. Settings are now written atomically.
+
+### Other updates
+- Updated the user guide for the Settings tabs and the current tray menu.
+
 ## [1.3.1] - 2026-10-19
 
 - Start the update download timeout when Update is clicked. Report timeouts and allow retrying instead of leaving the download dialog stuck.

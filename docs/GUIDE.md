@@ -3,6 +3,7 @@
 - [Install and first run](#install-and-first-run)
 - [The problem it solves](#the-problem-it-solves)
 - [The tray menu](#the-tray-menu)
+- [Settings](#settings)
 - [Auto-refresh](#auto-refresh)
 - [Safety](#safety)
 - [Where your data lives](#where-your-data-lives)
@@ -67,11 +68,24 @@ icon.
 |---|---|
 | Refresh tray icons | Runs the scan and applies changes |
 | Show last results | Opens the report window |
-| Start with Windows | Current-user `Run` key registration |
-| Run refresh when Tray Keeper starts | Persisted in `settings.json` |
-| Auto-refresh every minute | Timer on or off, persisted in `settings.json`; on by default |
-| About Tray Keeper | Version, build stamp, the registry value written, and the change history |
+| Settings… | Opens Settings with Preferences, Updates, and About tabs |
 | Exit | Removes the icon and quits |
+
+## Settings
+
+Settings has three tabs:
+
+| Tab | Contents |
+|---|---|
+| Preferences | Start with Windows, Run refresh when Tray Keeper starts, auto-refresh and its interval, balloon notifications, missing-executable handling |
+| Updates | Update check schedule (hourly, daily, weekly, monthly, never) and **Check for updates** |
+| About | Version, release notes, executable and data paths, and **Copy details** |
+
+Every tab shares one **Save** / **Cancel** footer. Changes are drafts until you click
+**Save** (or press Enter), which stores them and applies them at once without
+restarting Tray Keeper. **Cancel**, Esc, or the window's close button discards them.
+If the settings file cannot be written, Save shows an error and keeps the window open.
+**Check for updates**, **Open**, and **Copy details** act immediately and do not need Save.
 
 Double-clicking the tray icon runs a refresh. Launching Tray Keeper while it is
 already running signals the existing instance to refresh instead of adding a second
@@ -112,8 +126,8 @@ Cost per tick is one read of a single HKCU key plus file-metadata lookups for it
 entries; nothing is written unless a match is found, and a backup is still taken
 before any write.
 
-Turn it off from the tray menu. The interval is not in the menu, but `settings.json`
-accepts one:
+Turn it off or change the interval in Settings → Preferences. `settings.json` stores
+both:
 
 ```json
 {
@@ -139,7 +153,7 @@ timer.
 ## Where your data lives
 
 ```
-%LocalAppData%\TrayKeeper\settings.json        menu toggles
+%LocalAppData%\TrayKeeper\settings.json        Settings preferences
 %LocalAppData%\TrayKeeper\last-result.json     the report shown by "Show last results"
 %LocalAppData%\TrayKeeper\last-changes.json    undo record for "Restore last changes"
 %LocalAppData%\TrayKeeper\Logs\                rotating log, 5 files x 512 KB

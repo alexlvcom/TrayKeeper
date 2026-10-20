@@ -40,6 +40,9 @@ public sealed class AppSettings
     /// </summary>
     public TimeSpan AutoRefreshInterval => TimeSpan.FromMinutes(Math.Clamp(
         AutoRefreshIntervalMinutes, MinAutoRefreshIntervalMinutes, MaxAutoRefreshIntervalMinutes));
+
+    /// <summary>An independent copy for the Settings draft, so Cancel leaves the running settings untouched.</summary>
+    public AppSettings Clone() => (AppSettings)MemberwiseClone();
 }
 
 public sealed class SettingsStore
@@ -71,19 +74,29 @@ public sealed class SettingsStore
         }
     }
 
-    public void Save(AppSettings settings)
+    /// <summary>Writes atomically. Returns false and sets <paramref name="error"/> when the write fails.</summary>
+    public bool Save(AppSettings settings, out string? error)
     {
         try
         {
             var directory = Path.GetDirectoryName(_path);
             if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 
-            File.WriteAllText(_path, JsonSerializer.Serialize(settings, Options));
+            var temp = _path + ".tmp";
+            File.WriteAllText(temp, JsonSerializer.Serialize(settings, Options));
+            File.Move(temp, _path, overwrite: true);
+            error = null;
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
                                       or ArgumentException or NotSupportedException)
         {
             _log.Warn($"Could not save settings. {ex.Message}");
+            error = ex.Message;
+            return false;
         }
     }
+
+    /// <summary>Best-effort save for background state such as the last update check time.</summary>
+    public void Save(AppSettings settings) => Save(settings, out _);
 }

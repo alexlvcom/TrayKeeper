@@ -1,4 +1,5 @@
 using TrayKeeper.Logging;
+using TrayKeeper.Services;
 using TrayKeeper.Settings;
 
 namespace TrayKeeper.Tests;
@@ -49,6 +50,43 @@ public sealed class AppSettingsTests : IDisposable
 
         Assert.False(loaded.AutoRefreshEnabled);
         Assert.Equal(TimeSpan.FromMinutes(5), loaded.AutoRefreshInterval);
+    }
+
+    [Fact]
+    public void EditingASettingsDraftLeavesTheRunningSettingsUnchanged()
+    {
+        var running = new AppSettings { CheckFrequency = UpdateCheckFrequency.Daily, AutoRefreshIntervalMinutes = 5 };
+
+        var draft = running.Clone();
+        draft.CheckFrequency = UpdateCheckFrequency.Hourly;
+        draft.AutoRefreshIntervalMinutes = 30;
+
+        Assert.Equal(UpdateCheckFrequency.Daily, running.CheckFrequency);
+        Assert.Equal(5, running.AutoRefreshIntervalMinutes);
+    }
+
+    [Fact]
+    public void ASuccessfulSaveReportsNoErrorAndLeavesNoTempFile()
+    {
+        var path = SettingsPath;
+        var store = new SettingsStore(NullLog.Instance, path);
+
+        Assert.True(store.Save(new AppSettings { CheckFrequency = UpdateCheckFrequency.Hourly }, out var error));
+        Assert.Null(error);
+        Assert.False(File.Exists(path + ".tmp"));
+        Assert.Equal(UpdateCheckFrequency.Hourly, store.Load().CheckFrequency);
+    }
+
+    [Fact]
+    public void AFailedSaveIsReportedSoSettingsCanShowAnError()
+    {
+        // A directory in place of settings.json makes the write fail.
+        var path = SettingsPath;
+        Directory.CreateDirectory(path);
+        var store = new SettingsStore(NullLog.Instance, path);
+
+        Assert.False(store.Save(new AppSettings(), out var error));
+        Assert.False(string.IsNullOrEmpty(error));
     }
 
     [Fact]

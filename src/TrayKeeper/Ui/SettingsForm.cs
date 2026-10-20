@@ -10,20 +10,23 @@ namespace TrayKeeper.Ui;
 /// <summary>
 /// Settings dialog: dedicated tabs for Preferences, Updates, and About,
 /// ensuring full-width unclipped paths, clear update management, and quick settings access.
+/// Edits a draft copy; nothing is stored until Save, and Cancel or the title-bar X discards it.
 /// </summary>
 public sealed class SettingsForm : Form
 {
     private readonly AppSettings _settings;
-    private readonly Action<AppSettings> _onSaveSettings;
+    private readonly Func<AppSettings, string?> _onSaveSettings;
     private readonly Func<Task> _onCheckForUpdates;
     private readonly StartupManager? _startupManager;
     private readonly TabControl _tabs;
-    private readonly Button _closeButton;
+    private readonly Button _saveButton;
+    private readonly Button _cancelButton;
+    private CheckBox? _startWithWindowsCheck;
 
     public SettingsForm(
         Icon icon,
         AppSettings settings,
-        Action<AppSettings> onSaveSettings,
+        Func<AppSettings, string?> onSaveSettings,
         Func<Task> onCheckForUpdates,
         StartupManager? startupManager = null)
     {
@@ -58,28 +61,61 @@ public sealed class SettingsForm : Form
         var footerPanel = new Panel
         {
             Dock = DockStyle.Bottom,
+            Width = ClientSize.Width,
             Height = 48,
             Padding = new Padding(16, 8, 16, 12),
         };
 
-        _closeButton = new Button
+        _cancelButton = new Button
         {
-            Text = "Close",
-            DialogResult = DialogResult.OK,
+            Text = "Cancel",
+            DialogResult = DialogResult.Cancel,
             Size = new Size(90, 30),
             Location = new Point(footerPanel.ClientSize.Width - 106, 9),
             Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
         };
-        _closeButton.Click += (_, _) => Close();
-        footerPanel.Controls.Add(_closeButton);
+
+        _saveButton = new Button
+        {
+            Text = "Save",
+            Size = new Size(90, 30),
+            Location = new Point(_cancelButton.Left - 98, 9),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+        };
+        _saveButton.Click += (_, _) => SaveAndClose();
+        // Shown modeless, so DialogResult alone would not close the window.
+        _cancelButton.Click += (_, _) => Close();
+        footerPanel.Controls.AddRange(new Control[] { _saveButton, _cancelButton });
 
         Controls.Add(_tabs);
         Controls.Add(footerPanel);
 
-        AcceptButton = _closeButton;
-        CancelButton = _closeButton;
+        AcceptButton = _saveButton;
+        CancelButton = _cancelButton;
 
-        Shown += (_, _) => _closeButton.Focus();
+        Shown += (_, _) => _saveButton.Focus();
+    }
+
+    private void SaveAndClose()
+    {
+        var error = _onSaveSettings(_settings);
+        if (error != null)
+        {
+            MessageBox.Show(this, $"Could not save settings. Your changes are still open in this window.\n\n{error}",
+                AppInfo.DisplayName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        // Autostart lives in the Startup folder rather than settings.json, so it is applied here.
+        if (_startupManager != null && _startWithWindowsCheck != null
+            && _startWithWindowsCheck.Checked != _startupManager.IsEnabled
+            && !_startupManager.TrySetEnabled(_startWithWindowsCheck.Checked))
+        {
+            MessageBox.Show(this, "Settings were saved, but the startup setting could not be changed. See the log for details.",
+                AppInfo.DisplayName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        Close();
     }
 
     public void SelectTab(string tabName)
@@ -347,11 +383,7 @@ public sealed class SettingsForm : Form
         freqCombo.SelectedItem = _settings.CheckFrequency;
         freqCombo.SelectedIndexChanged += (_, _) =>
         {
-            if (freqCombo.SelectedItem is UpdateCheckFrequency freq)
-            {
-                _settings.CheckFrequency = freq;
-                _onSaveSettings(_settings);
-            }
+            if (freqCombo.SelectedItem is UpdateCheckFrequency freq) _settings.CheckFrequency = freq;
         };
 
         var checkNowBtn = new Button
@@ -431,22 +463,14 @@ public sealed class SettingsForm : Form
 
         if (_startupManager != null)
         {
-            var startWithWindowsCheck = new CheckBox
+            _startWithWindowsCheck = new CheckBox
             {
                 Text = "Start Tray Keeper with Windows",
                 Checked = _startupManager.IsEnabled,
                 AutoSize = true,
                 Location = new Point(16, y),
             };
-            startWithWindowsCheck.CheckedChanged += (_, _) =>
-            {
-                if (!_startupManager.TrySetEnabled(startWithWindowsCheck.Checked))
-                {
-                    startWithWindowsCheck.Checked = _startupManager.IsEnabled;
-                    MessageBox.Show(this, "Could not change the startup setting. See the log for details.", AppInfo.DisplayName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                }
-            };
-            page.Controls.Add(startWithWindowsCheck);
+            page.Controls.Add(_startWithWindowsCheck);
             y += 34;
         }
 
@@ -460,7 +484,6 @@ public sealed class SettingsForm : Form
         startupRefreshCheck.CheckedChanged += (_, _) =>
         {
             _settings.RunRefreshOnStartup = startupRefreshCheck.Checked;
-            _onSaveSettings(_settings);
         };
         page.Controls.Add(startupRefreshCheck);
 
@@ -505,13 +528,11 @@ public sealed class SettingsForm : Form
         {
             _settings.AutoRefreshEnabled = autoRefreshCheck.Checked;
             intervalNum.Enabled = autoRefreshCheck.Checked;
-            _onSaveSettings(_settings);
         };
 
         intervalNum.ValueChanged += (_, _) =>
         {
             _settings.AutoRefreshIntervalMinutes = (int)intervalNum.Value;
-            _onSaveSettings(_settings);
         };
 
         page.Controls.AddRange(new Control[] { autoRefreshCheck, intervalLabel, intervalNum, minutesLabel });
@@ -528,7 +549,6 @@ public sealed class SettingsForm : Form
         notificationsCheck.CheckedChanged += (_, _) =>
         {
             _settings.ShowBalloonNotifications = notificationsCheck.Checked;
-            _onSaveSettings(_settings);
         };
         page.Controls.Add(notificationsCheck);
 
@@ -544,7 +564,6 @@ public sealed class SettingsForm : Form
         skipMissingCheck.CheckedChanged += (_, _) =>
         {
             _settings.SkipMissingExecutables = skipMissingCheck.Checked;
-            _onSaveSettings(_settings);
         };
         page.Controls.Add(skipMissingCheck);
 

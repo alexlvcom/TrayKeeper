@@ -218,17 +218,24 @@ public sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
+        // A copy, so Cancel really cancels.
+        var draft = _settings.Clone();
+
         _settingsForm = new SettingsForm(
             _icon,
-            _settings,
-            settings =>
+            draft,
+            saved =>
             {
-                _settings = settings;
-                _settingsStore.Save(_settings);
+                // Keep background state written since the dialog opened.
+                saved.LastUpdateCheckUtc = _settings.LastUpdateCheckUtc;
+                if (!_settingsStore.Save(saved, out var error)) return error;
+
+                _settings = saved;
                 ApplyUpdateSchedule();
                 _autoRefreshTimer.Interval = (int)_settings.AutoRefreshInterval.TotalMilliseconds;
                 _autoRefreshTimer.Enabled = _settings.AutoRefreshEnabled;
                 _notifyIcon.Text = TooltipText();
+                return null;
             },
             () => CheckForUpdatesAsync(manual: true),
             _startupManager);

@@ -24,12 +24,18 @@
 
 - Default to checking immediately on startup and daily while running. Settings must support hourly, daily, weekly, calendar-monthly, and never. Never disables startup and scheduled checks while leaving manual checks available. Keep checks asynchronous and prevent overlapping checks or downloads.
 - Offer Update/Later for a newer stable release with `TrayKeeper-Setup.exe`. Download only after Update is clicked. Verify the GitHub SHA-256 digest or published `SHA256SUMS.txt` before launching setup.
-- Keep background failures quiet. Manual Check for updates lives in the About window, reporting results to the user.
+- Keep background failures quiet. Manual Check for updates lives on the Settings Updates tab, reporting results to the user.
 - Run tests with `dotnet test tests/TrayKeeper.Tests/TrayKeeper.Tests.csproj -c Release`.
+
+## Settings save model
+
+- Follow the shared Windows standard: one right-aligned Save/Cancel footer on every Settings tab, including Updates and About. No Apply or Close-only footer.
+- Settings edits a cloned draft. Every preference, including the update schedule and Start with Windows, is stored only on Save and applied at once without restart. Cancel, Esc, and the title-bar X discard the draft.
+- A failed settings write shows an error and keeps the window open. Check for updates, Open, and Copy details are immediate actions.
 
 ## About window layout
 
-- Show the app icon before the app name. Keep the EXE path, settings path, backups path, and logs path selectable for copying, but focus Close initially so diagnostic paths and release notes are not preselected.
+- Show the app icon before the app name. Keep the EXE path, settings path, backups path, and logs path selectable for copying, but focus the footer Save button initially so diagnostic paths and release notes are not preselected.
 - Include a "Copy details" button to copy diagnostic paths and release notes to the clipboard without requiring manual selection.
 
 ## Automated release identity
