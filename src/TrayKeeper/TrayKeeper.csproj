@@ -4,17 +4,20 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
+    <!-- WinForms hosts the tray icon and the message loop; every window is WPF with the shared
+         AlexLV.WindowsUi kit (see AlexLV.WindowsUi/README.md). -->
     <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <RootNamespace>TrayKeeper</RootNamespace>
     <AssemblyName>TrayKeeper</AssemblyName>
     <ApplicationIcon>Resources\app.ico</ApplicationIcon>
-    <Version>1.3.2</Version>
-    <InformationalVersion>1.3.2</InformationalVersion>
-    <FileVersion>1.3.2.0</FileVersion>
-    <AssemblyVersion>1.3.2.0</AssemblyVersion>
+    <Version>1.4.0</Version>
+    <InformationalVersion>1.4.0</InformationalVersion>
+    <FileVersion>1.4.0.0</FileVersion>
+    <AssemblyVersion>1.4.0.0</AssemblyVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <!-- The name people read. The assembly, the folder and the Run-key value stay one word;
          see AppInfo.cs. -->
@@ -32,6 +35,16 @@
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WinForms and WPF share type names (Button, TextBox, Application); WPF files opt in to
+         WinForms explicitly instead of through implicit usings. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <!-- UseWPF drops these to avoid System.Windows.Shapes.Path; no file here imports Shapes. -->
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
+  </ItemGroup>
 
   <ItemGroup>
     <None Include="Resources\app.ico" />

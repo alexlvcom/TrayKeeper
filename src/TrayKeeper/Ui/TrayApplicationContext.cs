@@ -1,3 +1,6 @@
+using System.Drawing;
+using System.Windows.Forms;
+using AlexLV.WindowsUi;
 using TrayKeeper.Logging;
 using TrayKeeper.Services;
 using TrayKeeper.Settings;
@@ -6,10 +9,14 @@ namespace TrayKeeper.Ui;
 
 /// <summary>
 /// Owns the notification-area icon and its menu. There is no main window; work happens on a menu
-/// command, a double-click, a second launch, or — when auto-refresh is on — a timer tick.
+/// command, a double-click, a second launch, or — when auto-refresh is on — a timer tick. The tray
+/// stays WinForms (NotifyIcon and its message loop); every window is WPF with the shared kit.
 /// </summary>
 public sealed class TrayApplicationContext : ApplicationContext
 {
+    /// <summary>Tray Keeper's accent, the Windows blue of its icon.</summary>
+    public static readonly AccentColors Accent = AccentColors.FromHex("#0067B8", "#6CB8F6", onDark: "#0B1A26");
+
     private readonly RefreshService _refreshService;
     private readonly ResultStore _resultStore;
     private readonly ExplorerRestarter _explorerRestarter;
@@ -19,11 +26,12 @@ public sealed class TrayApplicationContext : ApplicationContext
     private readonly Icon _icon;
 
     private readonly NotifyIcon _notifyIcon;
+    private readonly TrayMenuStyler _menuStyler;
     private readonly System.Windows.Forms.Timer _autoRefreshTimer;
 
     private AppSettings _settings;
-    private ResultsForm? _resultsForm;
-    private SettingsForm? _settingsForm;
+    private ResultsWindow? _resultsWindow;
+    private SettingsWindow? _settingsWindow;
     private readonly ShutdownListenerWindow _shutdownListener;
     private readonly UpdateService _updates = new();
     private readonly CancellationTokenSource _updateCancellation = new();
@@ -52,8 +60,8 @@ public sealed class TrayApplicationContext : ApplicationContext
         _settings = settingsStore.Load();
         _icon = AppIcon.Load();
 
-        var refreshItem = new ToolStripMenuItem("&Refresh tray icons", null, (_, _) => RunRefresh(RefreshTrigger.Manual));
-        var showResultsItem = new ToolStripMenuItem("&Show last results", null, (_, _) => ShowResults());
+        ThemeManager.Initialize(AppInfo.DisplayName, Accent, _settings.Theme);
+        ThemeManager.WindowIcon = WinFormsHosting.ToImageSource(_icon);
 
         // A WinForms timer ticks on the UI thread, so a refresh needs no marshalling and cannot
         // overlap the message pump's other work.
@@ -64,6 +72,8 @@ public sealed class TrayApplicationContext : ApplicationContext
         _autoRefreshTimer.Tick += (_, _) => OnAutoRefreshTick();
         _autoRefreshTimer.Enabled = _settings.AutoRefreshEnabled;
 
+        var refreshItem = new ToolStripMenuItem("&Refresh tray icons", null, (_, _) => RunRefresh(RefreshTrigger.Manual));
+        var showResultsItem = new ToolStripMenuItem("&Show last results", null, (_, _) => ShowResults());
         var settingsItem = new ToolStripMenuItem("Se&ttings…", null, (_, _) => ShowSettings());
         var exitItem = new ToolStripMenuItem("E&xit", null, (_, _) => ExitApplication());
 
@@ -76,6 +86,14 @@ public sealed class TrayApplicationContext : ApplicationContext
             settingsItem,
             exitItem,
         });
+
+        _menuStyler = new TrayMenuStyler(menu);
+        _menuStyler.SetGlyph(refreshItem, "");
+        _menuStyler.SetGlyph(showResultsItem, "");
+        _menuStyler.SetGlyph(settingsItem, "");
+        _menuStyler.SetGlyph(exitItem, "");
+        // Double-clicking the icon runs this item, so it is drawn as the default.
+        refreshItem.Font = new Font(menu.Font, System.Drawing.FontStyle.Bold);
 
         _notifyIcon = new NotifyIcon
         {
@@ -136,7 +154,7 @@ public sealed class TrayApplicationContext : ApplicationContext
     /// </summary>
     private void OnAutoRefreshTick()
     {
-        if (_busy || _resultsForm is { IsDisposed: false, IsBusy: true }) return;
+        if (_busy || _resultsWindow is { IsBusy: true }) return;
 
         RunRefresh(RefreshTrigger.Automatic);
     }
@@ -177,7 +195,7 @@ public sealed class TrayApplicationContext : ApplicationContext
             ShowBalloon(AppInfo.DisplayName, result.Summary, iconKind);
         }
 
-        if (_resultsForm is { IsDisposed: false, Visible: true }) _resultsForm.LoadReport();
+        if (_resultsWindow is { IsVisible: true }) _resultsWindow.LoadReport();
     }
 
     /// <summary>
@@ -192,37 +210,31 @@ public sealed class TrayApplicationContext : ApplicationContext
 
     private void ShowResults()
     {
-        if (_resultsForm is { IsDisposed: false })
+        if (_resultsWindow is not null)
         {
-            _resultsForm.LoadReport();
-            _resultsForm.Show();
-            _resultsForm.WindowState = FormWindowState.Normal;
-            _resultsForm.Activate();
+            _resultsWindow.LoadReport();
+            WinFormsHosting.ShowModeless(_resultsWindow);
             return;
         }
 
-        _resultsForm = new ResultsForm(_refreshService, _resultStore, _explorerRestarter, _icon);
-        _resultsForm.FormClosed += (_, _) => _resultsForm = null;
-        _resultsForm.Show();
-        _resultsForm.Activate();
+        _resultsWindow = new ResultsWindow(_refreshService, _resultStore, _explorerRestarter);
+        _resultsWindow.Closed += (_, _) => _resultsWindow = null;
+        WinFormsHosting.ShowModeless(_resultsWindow);
     }
 
     private void ShowSettings(string? initialTab = null)
     {
-        if (_settingsForm is { IsDisposed: false })
+        if (_settingsWindow is not null)
         {
-            _settingsForm.Show();
-            _settingsForm.WindowState = FormWindowState.Normal;
-            if (initialTab != null) _settingsForm.SelectTab(initialTab);
-            _settingsForm.Activate();
+            if (initialTab != null) _settingsWindow.SelectTab(initialTab);
+            WinFormsHosting.ShowModeless(_settingsWindow);
             return;
         }
 
         // A copy, so Cancel really cancels.
         var draft = _settings.Clone();
 
-        _settingsForm = new SettingsForm(
-            _icon,
+        _settingsWindow = new SettingsWindow(
             draft,
             saved =>
             {
@@ -235,17 +247,15 @@ public sealed class TrayApplicationContext : ApplicationContext
                 _autoRefreshTimer.Interval = (int)_settings.AutoRefreshInterval.TotalMilliseconds;
                 _autoRefreshTimer.Enabled = _settings.AutoRefreshEnabled;
                 _notifyIcon.Text = TooltipText();
+                ThemeManager.Apply(_settings.Theme);
                 return null;
             },
             () => CheckForUpdatesAsync(manual: true),
             _startupManager);
-        if (initialTab != null) _settingsForm.SelectTab(initialTab);
-        _settingsForm.FormClosed += (_, _) => _settingsForm = null;
-        _settingsForm.Show();
-        _settingsForm.Activate();
+        if (initialTab != null) _settingsWindow.SelectTab(initialTab);
+        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+        WinFormsHosting.ShowModeless(_settingsWindow);
     }
-
-    private void ShowAbout() => ShowSettings("About");
 
     /// <summary>"minute" or "N minutes", from the clamped interval the timer actually uses.</summary>
     private string DescribeInterval()
@@ -253,8 +263,6 @@ public sealed class TrayApplicationContext : ApplicationContext
         var minutes = (int)_settings.AutoRefreshInterval.TotalMinutes;
         return minutes == 1 ? "minute" : $"{minutes} minutes";
     }
-
-    private string AutoRefreshItemText() => $"&Auto-refresh every {DescribeInterval()}";
 
     private string TooltipText()
     {
@@ -281,93 +289,61 @@ public sealed class TrayApplicationContext : ApplicationContext
         if (_settings.CheckFrequency != UpdateCheckFrequency.Never) _updateTimer.Start();
     }
 
-    private async Task CheckForUpdatesAsync(bool manual)
+    /// <summary>Checks GitHub. Manual checks report every outcome; automatic ones only offer an update.</summary>
+    private async Task<UpdateStatus> CheckForUpdatesAsync(bool manual)
     {
-        if (_checkingUpdate || (!manual && _settings.CheckFrequency == UpdateCheckFrequency.Never)) return;
+        var current = Changelog.MarketingVersion;
+        if (_checkingUpdate) return new UpdateStatus(UpdateState.Checking, "Checking for updates…", "A check is already running");
+        if (!manual && _settings.CheckFrequency == UpdateCheckFrequency.Never)
+        {
+            return new UpdateStatus(UpdateState.NotChecked, "Automatic checks are off", $"Version {current}");
+        }
+
         _checkingUpdate = true;
         try
         {
-            var update = await _updates.CheckAsync(Version.Parse(Changelog.MarketingVersion), _updateCancellation.Token);
+            var update = await _updates.CheckAsync(Version.Parse(current), _updateCancellation.Token);
             _settings.LastUpdateCheckUtc = DateTime.UtcNow;
             _settingsStore.Save(_settings);
+            var checkedAt = $"Last checked {DateTime.Now:yyyy-MM-dd HH:mm}";
 
             if (update is null)
             {
-                if (manual) MessageBox.Show($"You are running version {Changelog.MarketingVersion}.\n\nNo newer installer version is available.", AppInfo.DisplayName, MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
+                if (manual) MessageDialog.Show($"You are running version {current}.\n\nNo newer installer version is available.", MessageKind.Info);
+                return new UpdateStatus(UpdateState.UpToDate, $"{AppInfo.DisplayName} is up to date", $"Version {current} · {checkedAt}");
             }
-            if (!manual && _lastOfferedUpdate == update.Version) return;
+
+            var available = new UpdateStatus(UpdateState.Available, $"Version {update.Version.ToString(3)} is available",
+                $"You have {current} · {checkedAt}");
+            if (!manual && _lastOfferedUpdate == update.Version) return available;
             _lastOfferedUpdate = update.Version;
             ShowUpdateDialog(update);
+            return available;
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            return new UpdateStatus(UpdateState.Failed, "Update check stopped", $"Version {current}");
+        }
         catch (Exception ex)
         {
             _log.Error("Update check failed.", ex);
-            if (manual) MessageBox.Show($"Could not check for updates. Please try again later.\n\n{ex.Message}", AppInfo.DisplayName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            if (manual) MessageDialog.Show($"Could not check for updates. Please try again later.\n\n{ex.Message}", MessageKind.Warning);
+            return new UpdateStatus(UpdateState.Failed, "Could not check for updates", $"Version {current} · {ex.Message}");
         }
         finally { _checkingUpdate = false; }
     }
 
     private void ShowUpdateDialog(AppUpdate update)
     {
-        using var dialog = new Form
+        _busy = true;
+        try
         {
-            Text = $"Update {AppInfo.DisplayName} (v{Changelog.MarketingVersion})",
-            StartPosition = FormStartPosition.CenterScreen,
-            FormBorderStyle = FormBorderStyle.FixedDialog,
-            MaximizeBox = false,
-            MinimizeBox = false,
-            ShowInTaskbar = true,
-            ClientSize = new Size(470, 200),
-            Icon = _icon,
-        };
-        var message = new Label
+            new UpdateWindow(update, _updates, _updateCancellation.Token).ShowDialog();
+        }
+        finally
         {
-            Text = $"Version {update.Version} is available. You have {Changelog.MarketingVersion}.\n\nUpdate will download and open the installer. Setup will close the app and restart it after updating.",
-            Location = new Point(18, 18),
-            Size = new Size(434, 115),
-        };
-        var install = new Button { Text = "Update", Location = new Point(268, 152), Size = new Size(88, 30) };
-        var later = new Button { Text = "Later", Location = new Point(364, 152), Size = new Size(88, 30), DialogResult = DialogResult.Cancel };
-        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_updateCancellation.Token);
-        dialog.FormClosing += (_, _) => cancellation.Cancel();
-        install.Click += async (_, _) =>
-        {
-            install.Enabled = false;
-            message.Text = "Downloading and verifying the installer…";
-            using var attempt = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token);
-            attempt.CancelAfter(TimeSpan.FromMinutes(10));
-            try
-            {
-                var cache = Path.Combine(AppPaths.Root, "Updates");
-                var installer = await _updates.DownloadAsync(update, cache, attempt.Token);
-                if (dialog.IsDisposed) return;
-                _ = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = installer,
-                    UseShellExecute = true,
-                }) ?? throw new InvalidOperationException("Windows could not open the installer.");
-                dialog.Close();
-            }
-            catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
-            catch (OperationCanceledException)
-            {
-                if (dialog.IsDisposed) return;
-                message.Text = "The download timed out. Check your connection and click Update to try again.";
-                install.Enabled = true;
-            }
-            catch (Exception ex)
-            {
-                if (dialog.IsDisposed) return;
-                message.Text = $"Update failed. Please try again.\n\n{ex.Message}";
-                install.Enabled = true;
-            }
-        };
-        dialog.Controls.AddRange(new Control[] { message, install, later });
-        dialog.AcceptButton = install;
-        dialog.CancelButton = later;
-        dialog.ShowDialog();
+            _busy = false;
+        }
     }
 
     private void ExitApplication()
@@ -375,6 +351,8 @@ public sealed class TrayApplicationContext : ApplicationContext
         _log.Info("Exiting.");
         _autoRefreshTimer.Stop();
         _notifyIcon.Visible = false;
+        _settingsWindow?.Close();
+        _resultsWindow?.Close();
         ExitThread();
     }
 
@@ -391,10 +369,9 @@ public sealed class TrayApplicationContext : ApplicationContext
             _autoRefreshTimer.Stop();
             _autoRefreshTimer.Dispose();
             _notifyIcon.Visible = false;
+            _menuStyler.Dispose();
             _notifyIcon.ContextMenuStrip?.Dispose();
             _notifyIcon.Dispose();
-            _resultsForm?.Dispose();
-            _settingsForm?.Dispose();
             _icon.Dispose();
         }
 

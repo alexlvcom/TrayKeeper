@@ -18,7 +18,7 @@
 - Setup and uninstall close the app through `WM_CLOSE` on `TrayKeeperListener`, then wait for the `TrayKeeper.Singleton` mutex to be released. Setup uses `PrepareToInstall` and restarts a previously running app after upgrade. Do not add an `AppMutex` directive that prompts before automatic shutdown.
 - Preserve existing startup shortcuts by selecting the installer's `startup` task ("Start with Windows") when one already exists. Shortcuts must target the installed EXE.
 - Keep user settings, logs, and backups in `%LOCALAPPDATA%\TrayKeeper`; upgrades and uninstall must preserve them.
-- About must show the actual running EXE path from `Application.ExecutablePath`, not a hard-coded installation path.
+- About (Diagnostics tab) must show the actual running EXE path from `Environment.ProcessPath`, not a hard-coded installation path.
 
 ## GitHub updates
 
@@ -33,9 +33,18 @@
 - Settings edits a cloned draft. Every preference, including the update schedule and Start with Windows, is stored only on Save and applied at once without restart. Cancel, Esc, and the title-bar X discard the draft.
 - A failed settings write shows an error and keeps the window open. Check for updates, Open, and Copy details are immediate actions.
 
+## UI and themes
+
+- Every window and dialog is WPF styled by the shared AlexLV Windows UI kit, vendored in `src/TrayKeeper/AlexLV.WindowsUi/`. The canonical copy is `C:\projects\AlexLV.WindowsUi` (see its README); change it there and copy it to every app. The tray icon, its menu and the message loop stay WinForms; `TrayMenuStyler` themes the menu and `WinFormsHosting.ShowModeless` opens modeless windows.
+- Tray Keeper is the reference implementation of the kit. The approved design is `design/ui-redesign.html`; update it before a visible redesign.
+- Appearance → Theme offers System (default), Light and Dark. System follows the Windows app mode live. A new theme previews at once; any close without Save restores the saved theme.
+- Settings tabs (Preferences, Appearance, Updates, About, Diagnostics) must fit the fixed 720×660 window without vertical scrolling; move overflowing content to another tab. Use `MessageDialog`, never `MessageBox`.
+- Accent: `#0067B8` light, `#6CB8F6` dark (from the icon). Surfaces stay neutral.
+- Version and release notes come only from `CHANGELOG.md` (embedded, parsed by `Changelog.cs`).
+
 ## About window layout
 
-- Show the app icon before the app name. Keep the EXE path, settings path, backups path, and logs path selectable for copying, but focus the footer Save button initially so diagnostic paths and release notes are not preselected.
+- Show the app icon before the app name. Paths live on the Diagnostics tab, selectable for copying; focus the footer Save button initially so diagnostic paths and release notes are not preselected.
 - Include a "Copy details" button to copy diagnostic paths and release notes to the clipboard without requiring manual selection.
 
 ## Automated release identity

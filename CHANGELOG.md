@@ -2,6 +2,18 @@
 
 All notable changes to Tray Keeper are documented here. Format follows Keep a Changelog; versions follow Semantic Versioning.
 
+## [1.4.0] - 2026-10-20
+
+### Main changes
+- Redesigned every Tray Keeper window, dialog and the tray menu with the modern look shared by all AlexLV Windows apps: flat cards, toggle switches, an accent blue taken from the icon, and themed title bars.
+- Added Appearance → Theme with System (default), Light and Dark. System follows the Windows light or dark mode and switches live when Windows changes; a new choice previews at once and Cancel restores the saved theme.
+- Fixed the running version: 1.3.2 still reported itself as 1.3.1 in the title bar and About, so the update check could offer 1.3.2 again. The version and release notes now come from CHANGELOG.md alone.
+
+### Other updates
+- Settings now fits its window without scrolling, with separate Appearance and Diagnostics tabs.
+- Last results shows the report as sections for enabled entries, skipped look-alikes, matching sources and errors.
+- The update dialog shows download progress and offers Try again after a timeout or failure.
+
 ## [1.3.2] - 2026-10-20
 
 ### Main changes

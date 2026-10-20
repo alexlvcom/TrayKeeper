@@ -1,104 +1,83 @@
 using System.Reflection;
+using System.Text.RegularExpressions;
 
 namespace TrayKeeper;
 
+/// <summary>A heading group of one release ("Main changes", "Other updates"); untitled when the entry has none.</summary>
+public sealed record ChangelogSection(string? Heading, IReadOnlyList<string> Bullets);
+
+/// <summary>One release from CHANGELOG.md.</summary>
+public sealed class ChangelogEntry(string version, string date, IReadOnlyList<ChangelogSection> sections)
+{
+    public string Version { get; } = version;
+    public string Date { get; } = date;
+    public IReadOnlyList<ChangelogSection> Sections { get; } = sections;
+
+    /// <summary>Every bullet of the release, in order.</summary>
+    public string[] Notes => Sections.SelectMany(s => s.Bullets).ToArray();
+
+    public void Deconstruct(out string version, out string date, out string[] notes)
+    {
+        version = Version;
+        date = Date;
+        notes = Notes;
+    }
+}
+
 /// <summary>
-/// App version info and human-readable change history shown in the tray menu → About.
-/// Add a new entry at the top of <see cref="Entries"/> whenever behaviour changes,
-/// and bump &lt;VersionPrefix&gt; in the .csproj to match.
+/// Version info and release notes. CHANGELOG.md, embedded at build time, is the only source:
+/// About, the update check and the title bar all read the version from here, so they cannot drift
+/// from the changelog again (1.3.2 shipped saying 1.3.1 because a second, coded history was stale).
 /// </summary>
 public static class Changelog
 {
-    /// <summary>Newest first. Each entry: version, date, and bullet notes.</summary>
-    public static readonly (string Version, string Date, string[] Notes)[] Entries =
-    {
-        ("1.3.1", "2026-10-19", new[]
-        {
-            "Start the update download timeout when Update is clicked. Report timeouts and allow retrying instead of leaving the download dialog stuck.",
-        }),
-        ("1.3.0", "2026-10-17", new[]
-        {
-            "New: Windows installer (TrayKeeper-Setup.exe) installing per-user to %LOCALAPPDATA%\\Programs\\Tray Keeper with automatic upgrade shutdown.",
-            "New: in-app update checking against GitHub releases with configurable check frequency (Hourly, Daily, Weekly, Monthly, Never) and SHA-256 verification.",
-            "New: graceful application shutdown via TrayKeeperListener on WM_CLOSE for seamless setup and uninstall.",
-            "Changed: About dialog displays actual running executable path, data and log directories, current release notes, and a Copy details button.",
-        }),
-        ("1.2.1", "2026-09-16", new[]
-        {
-            "Changed: the app now calls itself \"Tray Keeper\" everywhere you read it — this",
-            "     About window, the tray menu, balloon tips and every dialog caption. The",
-            "     one-word form stays where it is an identifier: TrayKeeper.exe, the GitHub",
-            @"     repository, the %LocalAppData%\TrayKeeper folder and the Run-key value,",
-            "     which must not change or an existing autostart entry would be orphaned.",
-        }),
-        ("1.2.0", "2026-08-04", new[]
-        {
-            "New: auto-refresh. While Tray Keeper runs it re-scans every minute, so an icon",
-            "     hidden by an app update comes back on its own with no manual refresh.",
-            "     Toggle it from the tray menu; the interval is settable in settings.json",
-            "     (AutoRefreshIntervalMinutes, 1 to 1440).",
-            "Automatic refreshes are quiet: a balloon appears only when an icon was",
-            "     actually enabled, and the log records a repeated outcome only once.",
-            "An automatic refresh stands aside while a Tray Keeper dialog is open, so it",
-            "     cannot re-enable entries in the middle of 'Restore last changes'.",
-        }),
-        ("1.1.0", "2026-07-28", new[]
-        {
-            "New: About window showing the version, build date, the registry key",
-            "     Tray Keeper writes to, and this change history.",
-        }),
-        ("1.0.0", "2026-07-28", new[]
-        {
-            "Initial release.",
-            "Finds notification-area entries that Windows hid after an app update and",
-            "     enables them when another entry for the same app is already enabled.",
-            "Expands KNOWNFOLDERID prefixes in ExecutablePath, so packaged apps and",
-            "     anything under a well-known root are matched correctly.",
-            "Requires a matching notification icon identity (UID or IconGuid), so a",
-            "     visibility setting is never carried across two different icons of one app.",
-            "Skips entries whose executable no longer exists, so deleted versions are",
-            "     not promoted into icons that can never appear.",
-            "Company name alone, or a generic exe name like update.exe, is never enough",
-            "     to declare a match; conservative by design.",
-            "Backs up the whole key (JSON + .reg) before writing, and records the exact",
-            "     prior value of every change so 'Restore last changes' is lossless.",
-            "Writes only IsPromoted, only under HKCU, and never requires elevation.",
-            "Changes apply live — no Explorer restart, no settings broadcast.",
-        }),
-    };
+    private static readonly Lazy<ChangelogEntry[]> Parsed = new(() => Parse(ReadEmbedded()));
+
+    /// <summary>Newest first.</summary>
+    public static ChangelogEntry[] Entries => Parsed.Value;
 
     public const string Author = "Alex LV";
     public const string AuthorEmail = "alex@alexlv.com";
     public const string Copyright = "Copyright © 2026 Alex LV";
 
-    /// <summary>Author line shown in the About window header.</summary>
-    public static string AuthorLine => $"{Author}  ·  {AuthorEmail}";
-
-    /// <summary>Marketing version, e.g. "1.1.0" (from the newest changelog entry).</summary>
-    public static string MarketingVersion => Entries[0].Version;
-
-    /// <summary>Date of the newest changelog entry.</summary>
-    public static string MarketingDate => Entries[0].Date;
-
-    public static string GetReleaseNotes(string version)
-    {
-        var entry = Entries.FirstOrDefault(e => e.Version == version);
-        if (entry.Notes is { Length: > 0 })
-        {
-            return string.Join(Environment.NewLine, entry.Notes);
-        }
-        return "No release notes available for this version.";
-    }
-
-    /// <summary>Full build version including the auto-incrementing build/revision.</summary>
-    public static string BuildVersion
+    /// <summary>The running release, e.g. "1.4.0", from the assembly's informational version.</summary>
+    public static string MarketingVersion
     {
         get
         {
-            var version = Assembly.GetExecutingAssembly().GetName().Version;
-            return version?.ToString() ?? MarketingVersion;
+            var informational = typeof(Changelog).Assembly
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+            return string.IsNullOrWhiteSpace(informational) ? Entries[0].Version : informational.Split('+')[0];
         }
     }
+
+    /// <summary>The release whose notes About shows: the running version, not merely the newest heading.</summary>
+    public static ChangelogEntry? Current => Find(MarketingVersion);
+
+    public static ChangelogEntry? Find(string version) => Entries.FirstOrDefault(e => e.Version == version);
+
+    public static string GetReleaseNotes(string version)
+    {
+        var entry = Find(version);
+        if (entry is null) return "No release notes available for this version.";
+
+        var lines = new List<string>();
+        foreach (var section in entry.Sections)
+        {
+            if (section.Heading is not null)
+            {
+                if (lines.Count > 0) lines.Add("");
+                lines.Add(section.Heading);
+            }
+
+            lines.AddRange(section.Bullets.Select(b => "• " + b));
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    /// <summary>Full build version (four parts).</summary>
+    public static string BuildVersion => typeof(Changelog).Assembly.GetName().Version?.ToString() ?? MarketingVersion;
 
     /// <summary>Timestamp this executable was built.</summary>
     public static DateTime BuildDate
@@ -121,52 +100,37 @@ public static class Changelog
         }
     }
 
-    /// <summary>One-line summary of what the app is for.</summary>
-    public static readonly string[] Description =
-    {
-        "Re-enables notification-area icons that Windows hid after an application",
-        "update moved its executable into a new versioned folder.",
-        "",
-        "Only entries that confidently match an already-enabled entry are touched —",
-        "hidden icons in general are left alone.",
-    };
-
     /// <summary>The single registry value the app writes, surfaced for transparency.</summary>
     public static readonly string[] RegistryNotes =
     {
         @"Reads:  HKCU\Control Panel\NotifyIconSettings",
         @"Writes: IsPromoted (0 -> 1) on matched entries only",
-        "        Nothing machine-wide. No elevation. No scheduled task.",
     };
 
-    /// <summary>
-    /// Everything except the version header. Used for the About window body, which already shows
-    /// the version and build stamp in its header.
-    /// </summary>
+    /// <summary>Plain-text history used by Copy details.</summary>
     public static string FormatBody()
     {
         var lines = new List<string>();
-        lines.AddRange(Description);
-        lines.Add("");
         lines.AddRange(RegistryNotes);
         lines.Add("");
         lines.Add("What's changed");
         lines.Add("──────────────");
 
-        foreach (var (version, date, notes) in Entries)
+        foreach (var entry in Entries)
         {
             lines.Add("");
-            lines.Add($"v{version}  ({date})");
-            foreach (var note in notes) lines.Add("  • " + note);
+            lines.Add($"v{entry.Version}  ({entry.Date})");
+            foreach (var section in entry.Sections)
+            {
+                if (section.Heading is not null) lines.Add("  " + section.Heading);
+                foreach (var bullet in section.Bullets) lines.Add("  • " + bullet);
+            }
         }
 
         return string.Join(Environment.NewLine, lines);
     }
 
-    /// <summary>
-    /// The version header plus <see cref="FormatBody"/> — the form used for the clipboard, so a
-    /// pasted copy identifies the exact build it came from.
-    /// </summary>
+    /// <summary>The version header plus <see cref="FormatBody"/>, so a pasted copy names its exact build.</summary>
     public static string FormatFull()
     {
         var header = new[]
@@ -180,5 +144,69 @@ public static class Changelog
         };
 
         return string.Join(Environment.NewLine, header) + FormatBody();
+    }
+
+    private static readonly Regex VersionHeading = new(@"^##\s+\[?(?<v>\d+\.\d+\.\d+)\]?\s*[-—–]\s*(?<d>\d{4}-\d{2}-\d{2})", RegexOptions.Compiled);
+
+    /// <summary>Parses Keep a Changelog headings (<c>## [1.4.0] - 2026-10-20</c>), <c>###</c> sections and <c>-</c> bullets.</summary>
+    public static ChangelogEntry[] Parse(string markdown)
+    {
+        var entries = new List<ChangelogEntry>();
+        string? version = null, date = null, heading = null;
+        var sections = new List<ChangelogSection>();
+        var bullets = new List<string>();
+
+        void FlushSection()
+        {
+            if (bullets.Count > 0) sections.Add(new ChangelogSection(heading, bullets.ToArray()));
+            bullets.Clear();
+        }
+
+        void FlushEntry()
+        {
+            FlushSection();
+            if (version is not null) entries.Add(new ChangelogEntry(version, date!, sections.ToArray()));
+            sections.Clear();
+            heading = null;
+        }
+
+        foreach (var raw in markdown.Split('\n'))
+        {
+            var line = raw.TrimEnd('\r');
+            var match = VersionHeading.Match(line);
+            if (match.Success)
+            {
+                FlushEntry();
+                version = match.Groups["v"].Value;
+                date = match.Groups["d"].Value;
+                continue;
+            }
+
+            if (version is null) continue;
+            if (line.StartsWith("### ", StringComparison.Ordinal))
+            {
+                FlushSection();
+                heading = line[4..].Trim();
+            }
+            else if (line.StartsWith("- ", StringComparison.Ordinal))
+            {
+                bullets.Add(line[2..].Trim().Replace("`", ""));
+            }
+            else if (line.StartsWith("  ", StringComparison.Ordinal) && bullets.Count > 0 && line.Trim().Length > 0)
+            {
+                bullets[^1] += " " + line.Trim();
+            }
+        }
+
+        FlushEntry();
+        return entries.ToArray();
+    }
+
+    private static string ReadEmbedded()
+    {
+        using var stream = typeof(Changelog).Assembly.GetManifestResourceStream("CHANGELOG.md")
+            ?? throw new InvalidOperationException("CHANGELOG.md is not embedded.");
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
     }
 }

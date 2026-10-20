@@ -1,0 +1,896 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tray Keeper redesign</title>
+<!--
+  Tray Keeper 1.3.2 UI inventory (from src/TrayKeeper/Ui/*.cs), every surface replicated below:
+
+  1. Notification-area icon. Tooltip "Tray Keeper v1.3.2 — auto-refresh every minute" (plain
+     "Tray Keeper v1.3.2" when auto-refresh is off). Double-click = Refresh tray icons.
+  2. Tray context menu: Refresh tray icons · Show last results · ─ · Settings… · Exit.
+  3. Balloon tips (5 s, click opens Last results): "Enabled N duplicate tray icon entries." (info),
+     "No disabled duplicate tray icons were found." (manual only), "Refresh failed. See the log for details." (error).
+  4. Settings window "Tray Keeper Settings (v1.3.2)", tabs Preferences / Updates / About,
+     Save + Cancel footer on every tab (draft model; Esc/X = Cancel).
+     Preferences: description; Start Tray Keeper with Windows; Run refresh when Tray Keeper starts;
+       Auto-refresh periodically while Tray Keeper runs + Auto-refresh interval [1..1440] minutes (enabled only
+       when auto-refresh is on); Show balloon notifications after refresh restores icons; Leave entries alone
+       when their executable is confirmed missing. NEW: Appearance → Theme System (default) / Light / Dark.
+     Updates: intro; status card (up to date / last checked); Check for updates: [frequency] + Check for updates
+       button (checking state); "Reliable automated updates" callout.
+     About: icon + "Tray Keeper v1.3.2", build line "· by alexlvcom", repository link; paths Executable,
+       Settings, Backups, Logs with Open; "Release notes for v1.3.2:"; View full change history; Copy details.
+  5. Message boxes from Settings: save failure ("Could not save settings. Your changes are still open in this
+     window."), startup failure ("Settings were saved, but the startup setting could not be changed."),
+     "Application details copied to clipboard.", "Failed to open folder: …".
+  6. "Tray Keeper Change History" window (full changelog, Close).
+  7. Update check results: "You are running version 1.3.2. No newer installer version is available.",
+     "Could not check for updates. Please try again later." (manual only).
+  8. Update dialog "Update Tray Keeper (v1.3.2)": available (Update / Later) → "Downloading and verifying the
+     installer…" → opens installer and closes | timed out ("The download timed out…", Update re-enabled) |
+     failed ("Update failed. Please try again." + reason).
+  9. "Tray Keeper — last results" window: report (Refreshed / Result / Scanned / Backup, Enabled, Looked similar
+     but skipped, Errors, or the never-ran empty state) + Close, Refresh now, Restore last changes (disabled
+     when nothing to restore), Open log folder, Restart Explorer.
+  10. Confirmations: Restore ("Revert the tray icon entries that Tray Keeper enabled during the last refresh?",
+      default No) → "Reverted 2 entries."; Restart Explorer warning (default No) → result message.
+-->
+<style>
+:root {
+  color-scheme: light dark;
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --radius: 5px;
+  --radius-lg: 8px;
+  /* Per-app identity: override these two in each mockup. */
+  --accent-light: #005fb8;   /* must give >= 4.5:1 on --surface (light) */
+  --accent-dark:  #60a5fa;   /* neutral default accent; >= 3:1 focus on dark canvas */
+}
+/* Light */
+:root, :root[data-theme="light"] {
+  --surface: #f5f5f5;   /* window canvas */
+  --chrome:  #ebebeb;   /* title row / nav / footer */
+  --raised:  #ffffff;   /* cards, inputs */
+  --border:  #d6d6d6;
+  --text:    #1b1b1b;
+  --muted:   #5f5f5f;
+  --accent:  var(--accent-light);
+  --on-accent: #ffffff;
+  --selection: color-mix(in srgb, var(--accent) 14%, transparent);
+  --danger: #b3261e;
+  --ok: #2e7d32;
+}
+/* Dark (neutral) */
+:root[data-theme="dark"] {
+  --surface: #1c1c1c;
+  --chrome:  #262626;
+  --raised:  #2d2d2d;
+  --border:  #3d3d3d;
+  --text:    #f0f0f0;
+  --muted:   #a6a6a6;
+  --accent:  var(--accent-dark);
+  --on-accent: #111111;
+  --selection: color-mix(in srgb, var(--accent) 18%, transparent);
+  --danger: #f2a198;
+  --ok: #9fd39f;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface: #1c1c1c; --chrome: #262626; --raised: #2d2d2d; --border: #3d3d3d;
+    --text: #f0f0f0; --muted: #a6a6a6; --accent: var(--accent-dark); --on-accent: #111111;
+    --selection: color-mix(in srgb, var(--accent) 18%, transparent);
+    --danger: #f2a198; --ok: #9fd39f;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #6b6a66; font: 14px/1.45 var(--font); }
+body { display: grid; place-items: center; min-height: 100vh; padding: 32px 16px; }
+
+/* Mockup harness bar (not part of the app) */
+.harness { position: fixed; top: 0; left: 0; right: 0; display: flex; gap: 12px; align-items: center;
+  padding: 6px 16px; background: #111; color: #ddd; font-size: 12px; z-index: 10; }
+.harness b { color: #fff; }
+
+/* Native-sized window: 720px wide like the standard requires */
+.window { width: 720px; max-width: 100%; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden;
+  box-shadow: 0 18px 48px rgba(0,0,0,.35); display: flex; flex-direction: column; min-height: 560px; }
+
+/* One title row: icon, title (vN.N.N), section tabs, window controls */
+.titlebar { display: flex; align-items: center; gap: 10px; background: var(--chrome);
+  padding: 0 0 0 14px; height: 44px; border-bottom: 1px solid var(--border); user-select: none; }
+.titlebar .app-icon { width: 18px; height: 18px; border-radius: 4px; flex: none; }
+.titlebar .title { font-weight: 600; white-space: nowrap; }
+.titlebar .title small { color: var(--muted); font-weight: 400; }
+.winctl { margin-left: auto; display: flex; height: 100%; }
+.winctl span { width: 46px; display: grid; place-items: center; color: var(--muted); }
+.winctl span:last-child:hover { background: #c42b1c; color: #fff; }
+
+.tabs { display: flex; gap: 2px; padding: 0 16px; background: var(--chrome); border-bottom: 1px solid var(--border); }
+.tab { appearance: none; border: 0; background: none; color: var(--muted); font: inherit;
+  padding: 10px 12px 9px; border-bottom: 2px solid transparent; cursor: pointer; border-radius: 0; }
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+
+.page { padding: 22px 24px; flex: 1; display: none; }
+.page.active { display: block; }
+.page h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+  margin: 0 0 10px; font-weight: 600; }
+.section + .section { margin-top: 20px; }
+
+.card { background: var(--raised); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 10px 16px; }
+.row + .row { border-top: 1px solid var(--border); }
+.row .label { flex: 1; min-width: 0; }
+.row .label span { display: block; color: var(--muted); font-size: 12.5px; }
+
+input[type="text"], input[type="number"], select, textarea {
+  font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 6px 10px; min-height: 32px; }
+input[type="number"] { width: 76px; }
+.path { width: 100%; min-width: 460px; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12.5px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+button.btn { font: inherit; color: var(--text); background: var(--raised); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 6px 14px; min-height: 32px; cursor: pointer; white-space: nowrap; }
+button.btn:hover { border-color: var(--accent); }
+button.btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+button.btn:disabled { opacity: .45; cursor: default; }
+
+/* Toggle switch */
+.switch { position: relative; width: 40px; height: 22px; flex: none; }
+.switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.switch i { position: absolute; inset: 0; border-radius: 11px; background: var(--border); transition: background .15s; pointer-events: none; }
+.switch i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--raised); box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: transform .15s; }
+.switch input:checked + i { background: var(--accent); }
+.switch input:checked + i::after { transform: translateX(18px); background: var(--on-accent); }
+.switch input:focus-visible + i { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Segmented control (theme picker) */
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.segmented button { font: inherit; border: 0; background: var(--surface); color: var(--text); padding: 6px 14px; cursor: pointer; }
+.segmented button + button { border-left: 1px solid var(--border); }
+.segmented button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+
+.status-card { display: flex; gap: 14px; align-items: center; padding: 16px; }
+.status-card .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); flex: none; }
+.muted { color: var(--muted); }
+.notes { font-size: 13px; max-height: 220px; min-height: 180px; overflow: auto; padding: 12px 16px; }
+
+/* Footer: Save/Cancel on every tab (shared standard) */
+.footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; background: var(--chrome);
+  border-top: 1px solid var(--border); }
+.dirty { margin-right: auto; align-self: center; color: var(--muted); font-size: 12.5px; }
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #111; color: #fff;
+  padding: 8px 14px; border-radius: var(--radius); font-size: 13px; opacity: 0; transition: opacity .2s; }
+.toast.show { opacity: 1; }
+</style>
+<script>
+/* Theme: 'system' (default) | 'light' | 'dark'. System follows Windows via prefers-color-scheme. */
+function applyTheme(choice) {
+  const root = document.documentElement;
+  if (choice === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', choice);
+  document.querySelectorAll('[data-theme-choice]').forEach(b =>
+    b.setAttribute('aria-pressed', String(b.dataset.themeChoice === choice)));
+}
+function wireMockup() {
+  document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
+    document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === tab.dataset.page));
+  }));
+  document.querySelectorAll('[data-theme-choice]').forEach(b =>
+    b.addEventListener('click', () => applyTheme(b.dataset.themeChoice)));
+  const toast = (msg) => { const t = document.querySelector('.toast'); if (!t) return;
+    t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1600); };
+  document.querySelectorAll('[data-preview]').forEach(b =>
+    b.addEventListener('click', () => toast('Preview: ' + b.dataset.preview)));
+  applyTheme('system');
+}
+document.addEventListener('DOMContentLoaded', wireMockup);
+</script>
+<style>
+/* Tray Keeper identity: Windows-blue from the app icon (#0070D0). */
+:root { --accent-light: #0067b8; --accent-dark: #6cb8f6; }
+:root[data-theme="dark"] { --on-accent: #0b1a26; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --on-accent: #0b1a26; } }
+
+::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); color: var(--text); }
+* { scrollbar-color: var(--border) transparent; scrollbar-width: thin; }
+a { color: var(--accent); text-underline-offset: 3px; }
+input, textarea, select { caret-color: var(--accent); }
+
+body { display: block; padding: 0; min-height: 100vh; }
+.harness { flex-wrap: wrap; row-gap: 4px; }
+.harness .group { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.harness button { font: inherit; font-size: 12px; background: #2a2a2a; color: #eee; border: 1px solid #444;
+  border-radius: 4px; padding: 3px 8px; cursor: pointer; }
+.harness button:hover { border-color: #888; }
+.harness button[aria-pressed="true"] { background: #eee; color: #111; }
+.harness .sep { width: 1px; height: 18px; background: #444; margin: 0 4px; }
+
+/* The Windows desktop the mockup sits on */
+.desktop { position: relative; min-height: 100vh; padding: 88px 16px 72px; display: grid; place-items: start center;
+  background: radial-gradient(1200px 600px at 70% 10%, #4b5a6a, #2b3138 70%); }
+.taskbar { position: fixed; left: 0; right: 0; bottom: 0; height: 48px; display: flex; align-items: center;
+  justify-content: flex-end; gap: 6px; padding: 0 12px; background: rgba(28,30,34,.92);
+  border-top: 1px solid rgba(255,255,255,.08); color: #e8e8e8; font-size: 12px; z-index: 5; }
+.tray-icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 4px; cursor: pointer;
+  border: 0; background: none; position: relative; }
+.tray-icon:hover, .tray-icon[aria-expanded="true"] { background: rgba(255,255,255,.1); }
+.tray-icon img { width: 16px; height: 16px; }
+.tray-icon .tip { display: none; position: absolute; bottom: 40px; right: 0; white-space: nowrap; background: #2b2b2b;
+  color: #eee; border: 1px solid #555; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+.tray-icon:hover .tip { display: block; }
+.clock { text-align: right; line-height: 1.25; padding-left: 8px; }
+
+/* Tray context menu (themed like the app) */
+.menu { position: fixed; right: 64px; bottom: 56px; min-width: 232px; background: var(--raised); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 4px; z-index: 20; display: none;
+  box-shadow: 0 10px 28px rgba(0,0,0,.35); }
+.menu.open { display: block; }
+.menu button { display: flex; width: 100%; gap: 10px; align-items: center; font: inherit; color: inherit; background: none;
+  border: 0; border-radius: var(--radius); padding: 8px 12px; text-align: left; cursor: pointer; }
+.menu button:hover, .menu button:focus-visible { background: var(--selection); outline: none; }
+.menu button svg { width: 16px; height: 16px; flex: none; color: var(--muted); }
+.menu button.default { font-weight: 600; }
+.menu hr { border: 0; border-top: 1px solid var(--border); margin: 4px 6px; }
+.menu u { text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+/* Windows toast-style balloon */
+.balloon { position: fixed; right: 12px; bottom: 60px; width: 360px; background: var(--raised); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; display: none; gap: 12px;
+  z-index: 15; box-shadow: 0 10px 28px rgba(0,0,0,.35); cursor: pointer; }
+.balloon.open { display: flex; animation: rise .25s cubic-bezier(.16,1,.3,1); }
+.balloon img { width: 20px; height: 20px; }
+.balloon b { display: block; }
+.balloon .kind { width: 18px; height: 18px; flex: none; margin-top: 1px; }
+@keyframes rise { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.window { position: relative; }
+.app-window { display: none; }
+.app-window.open { display: flex; }
+.titlebar .title { font-weight: 600; }
+.winctl span { cursor: default; }
+.winctl span svg { width: 10px; height: 10px; }
+.winctl [data-close] { cursor: pointer; }
+
+/* Modal dialogs: own title row, scrim */
+.scrim { position: fixed; inset: 0; background: rgba(0,0,0,.38); display: none; z-index: 30;
+  place-items: center; padding: 16px; }
+.scrim.open { display: grid; }
+.dialog { width: 470px; max-width: 100%; min-height: 0; animation: pop .18s cubic-bezier(.16,1,.3,1); }
+.dialog.wide { width: 560px; }
+@keyframes pop { from { transform: scale(.97); } to { transform: none; } }
+.dialog .body { display: flex; gap: 14px; padding: 20px 22px 8px; }
+.dialog .body p { margin: 0 0 10px; }
+.dialog .body .msg { flex: 1; min-width: 0; }
+.dialog .icon { width: 28px; height: 28px; flex: none; }
+.dialog .footer { margin-top: 12px; }
+.icon.info { color: var(--accent); } .icon.warn { color: #c98a00; } .icon.error { color: var(--danger); } .icon.ok { color: var(--ok); }
+.progress { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; margin: 6px 0 8px; }
+.progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s linear; }
+.error-text { color: var(--danger); }
+
+/* Settings specifics */
+.page > p.lead { margin: 0 0 18px; color: var(--muted); }
+/* Fixed size like the native window; pages never scroll (shared standard). */
+#win-settings { height: 660px; }
+#win-settings .page { overflow: hidden; min-height: 0; }
+.row.dependent { padding-left: 68px; }
+.row.dependent.off { opacity: .45; }
+.inline { display: flex; align-items: center; gap: 8px; }
+.field-error { color: var(--danger); font-size: 12.5px; display: none; }
+.field-error.show { display: block; }
+input.invalid { border-color: var(--danger); }
+.update-row { display: flex; gap: 10px; align-items: center; padding: 14px 16px; }
+.update-row label { flex: none; min-width: 132px; }
+.update-row select { min-width: 200px; }
+.status-card .dot.checking { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+.status-card .dot.available { background: var(--accent); }
+.status-card .dot.failed { background: var(--danger); }
+@keyframes pulse { 50% { opacity: .3; } }
+.callout { padding: 14px 16px; }
+.callout b { display: block; margin-bottom: 2px; }
+.about-head { display: flex; gap: 14px; align-items: center; margin-bottom: 16px; }
+.about-head img { width: 40px; height: 40px; }
+.about-head h3 { margin: 0; font-size: 18px; }
+.paths .row { gap: 6px 10px; min-height: 48px; flex-wrap: wrap; padding: 10px 16px 12px; }
+.paths .row > label { flex: 0 0 100%; color: var(--muted); font-size: 12.5px; }
+.paths .path { min-width: 460px; flex: 1; }
+.notes ul { margin: 6px 0 12px; padding-left: 18px; }
+.notes h4 { margin: 10px 0 4px; font-size: 13px; }
+.about-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+
+/* Results window */
+.results .summary { display: grid; grid-template-columns: 96px 1fr; gap: 6px 12px; padding: 16px; }
+.results .summary dt { color: var(--muted); }
+.results .summary dd { margin: 0; overflow-wrap: anywhere; }
+.results h3 { font-size: 14px; margin: 18px 0 8px; display: flex; gap: 8px; align-items: center; }
+.results h3 .count { font-size: 12px; color: var(--muted); font-weight: 400; }
+.entry { padding: 12px 16px; }
+.entry + .entry { border-top: 1px solid var(--border); }
+.entry .name { font-weight: 600; }
+.entry .kv { display: grid; grid-template-columns: 112px 1fr; gap: 2px 10px; font-size: 13px; margin-top: 4px; }
+.entry .kv span:nth-child(odd) { color: var(--muted); }
+.entry code, .results .summary code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; word-break: break-all; }
+.results .scroll { max-height: 400px; overflow: auto; padding-right: 4px; }
+.results .note { color: var(--muted); font-size: 13px; margin-top: 14px; }
+.results .footer { flex-wrap: wrap; }
+.results .footer .left { margin-right: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.pagebody { padding: 22px 24px; flex: 1; }
+.empty { padding: 28px 16px; text-align: center; color: var(--muted); }
+.empty b { display: block; color: var(--text); margin-bottom: 4px; }
+.history { font-size: 13px; max-height: 440px; overflow: auto; padding: 4px 16px 12px; }
+.history h4 { margin: 14px 0 4px; }
+.history ul { margin: 4px 0; padding-left: 18px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-refresh" viewBox="0 0 16 16"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-list" viewBox="0 0 16 16"><path d="M5.5 4h8M5.5 8h8M5.5 12h8M2.5 4h.01M2.5 8h.01M2.5 12h.01" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 1.8v1.6M8 12.6v1.6M14.2 8h-1.6M3.4 8H1.8M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1M12.4 12.4l-1.1-1.1M4.7 4.7 3.6 3.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+    <symbol id="i-exit" viewBox="0 0 16 16"><path d="M6 2.5H3.5v11H6M10 5l3 3-3 3M13 8H6.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 11v6M12 7.5v.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 10v4.5M12 17.2v.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-error" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m8.5 8.5 7 7M15.5 8.5l-7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-question" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9.5 9.3a2.6 2.6 0 0 1 5 .9c0 1.8-2.5 2.2-2.5 3.8M12 17.2v.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m7.5 12.5 3 3 6-6.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-min" viewBox="0 0 10 10"><path d="M0 5h10" stroke="currentColor"/></symbol>
+    <symbol id="i-max" viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9" fill="none" stroke="currentColor"/></symbol>
+    <symbol id="i-x" viewBox="0 0 10 10"><path d="m0 0 10 10M10 0 0 10" stroke="currentColor"/></symbol>
+  </defs>
+</svg>
+
+<div class="harness" role="toolbar" aria-label="Mockup controls">
+  <b>Tray Keeper 1.3.2 · redesign mockup</b>
+  <span class="sep"></span>
+  <div class="group">
+    <button data-open="menu">Tray menu</button>
+    <button data-open="settings:prefs">Settings · Preferences</button>
+    <button data-open="settings:updates">Settings · Updates</button>
+    <button data-open="settings:appearance">Settings · Appearance</button>
+    <button data-open="settings:about">Settings · About</button>
+    <button data-open="settings:diagnostics">Settings · Diagnostics</button>
+    <button data-open="results">Last results</button>
+    <button data-open="results-empty">Last results (never ran)</button>
+    <button data-open="history">Change history</button>
+    <button data-open="update">Update dialog</button>
+  </div>
+  <span class="sep"></span>
+  <div class="group">
+    <button data-balloon="applied">Balloon: enabled</button>
+    <button data-balloon="none">Balloon: nothing found</button>
+    <button data-balloon="failed">Balloon: failed</button>
+  </div>
+  <span class="sep"></span>
+  <div class="group" aria-label="Preview theme">
+    <span>Theme</span>
+    <button data-theme-choice="system">System</button>
+    <button data-theme-choice="light">Light</button>
+    <button data-theme-choice="dark">Dark</button>
+  </div>
+  <span class="sep"></span>
+  <label class="group"><input type="checkbox" id="simSaveFail"> Simulate save failure</label>
+  <label class="group"><input type="checkbox" id="simStartupFail"> Startup change fails</label>
+  <label class="group">Update check:
+    <select id="simUpdate" style="font-size:12px;min-height:0;padding:1px 4px">
+      <option value="available">finds 1.3.3</option><option value="current">up to date</option><option value="error">fails</option>
+    </select></label>
+  <label class="group">Download:
+    <select id="simDownload" style="font-size:12px;min-height:0;padding:1px 4px">
+      <option value="ok">succeeds</option><option value="timeout">times out</option><option value="fail">fails</option>
+    </select></label>
+</div>
+
+<main class="desktop">
+
+  <!-- ===== Settings window ===== -->
+  <section class="window app-window" id="win-settings" role="dialog" aria-labelledby="settings-title">
+    <div class="titlebar">
+      <img class="app-icon" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABGdBTUEAALGPC/xhBQAAAAlwSFlzAAAOwgAADsIBFShKgAAAAn1JREFUWEfVlz1MGzEUxz0yMjIyMjIydGDMyNgxIxsMFedUlQhDFXWoEAugDo3EypCBoR0qZalEh4oTsU/XqqVXJMQhoI2EEIcIwuj5yN352feZLPyl3xI/v/dsP79zCHmWWrUnicXmFV7xKWw2Xq0czhGLbxHKPUK5MMN8Qp02WWEv8fTqes1nCeVdPVgezJY7M5Ko09IdlwR2bdWbwK6zBWdMeUdzVp196bOwxhv8CWYX24lxbHs6HRxOVVhweNKYYcs4bCw4K21CdWbe/xKzG7/R78w3HwXlNexgFOjnMzFU7eNfNN5bxOHh7NvYSVUWdo6j4KDFzim26eLwJOxiurOyTL/7KfrBfRTc+38nJpuuamexQL2Wjd4MdlSFiTeOcM9vo+DB4EHMbR5pdk/U4gSgZeoGpWl/70fBQfXdE80mwuL1RAK8rhmUZHnPV4JDMthGwWLNOAGoSmyQcOxfDUSre6GNDYFthu0eav/4Rh4HtlNQE0i/gknHplVNvf0hExwKChAKEdvpJK9iRgfsOFeRc9DWt3/RGKyye3StjM9/8DQfRhq9hTgB6ExwNbAR5fIK2aeBEqT55VyOrX+9NP5eCMudjhMAZXwBIYnk9QLtHKgVDzuF56XDbDW4TCC9EAE4V2gqJhmbTSZOC4cPjyGnG5qSuB08GD44GcBRpz5g4TGJJyAg2N19fDOW9nzNJpMGX8dhVVnskzYJ8WL7jzj0A7FWpugAi7v5TzP55ueuNnl0+nrlpyn8OGW8/0vTl72mlMKX8egvJNjNwivHChtUU64AO84Dqh0KLvfMi0jWRY8WrA1P/hmpvOo8gWPo47AzSeAKQ+08Nz0CtxOt2rhL9I0AAAAASUVORK5CYII=" alt="">
+      <div class="title" id="settings-title">Tray Keeper Settings <small>(v1.3.2)</small></div>
+      <div class="winctl"><span><svg><use href="#i-min"/></svg></span><span data-close="settings" title="Close"><svg><use href="#i-x"/></svg></span></div>
+    </div>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" data-page="prefs" aria-selected="true">Preferences</button>
+      <button class="tab" role="tab" data-page="appearance" aria-selected="false">Appearance</button>
+      <button class="tab" role="tab" data-page="updates" aria-selected="false">Updates</button>
+      <button class="tab" role="tab" data-page="about" aria-selected="false">About</button>
+      <button class="tab" role="tab" data-page="diagnostics" aria-selected="false">Diagnostics</button>
+    </div>
+
+    <div class="page active" id="prefs" role="tabpanel">
+      <div class="section">
+        <h2>Startup</h2>
+        <div class="card">
+          <label class="row"><div class="label">Start Tray Keeper with Windows<span>Adds a sign-in entry that targets the installed app.</span></div>
+            <span class="switch"><input type="checkbox" data-draft="startWithWindows" checked><i></i></span></label>
+          <label class="row"><div class="label">Run refresh when Tray Keeper starts<span>Scans for hidden duplicate tray icons right after launch.</span></div>
+            <span class="switch"><input type="checkbox" data-draft="refreshOnStart" checked><i></i></span></label>
+        </div>
+      </div>
+      <div class="section">
+        <h2>Auto-refresh</h2>
+        <div class="card">
+          <label class="row"><div class="label">Auto-refresh periodically while Tray Keeper runs<span>Quiet unless a refresh actually enables an icon.</span></div>
+            <span class="switch"><input type="checkbox" id="autoRefresh" data-draft="autoRefresh" checked><i></i></span></label>
+          <div class="row dependent" id="intervalRow">
+            <label class="label" for="interval">Auto-refresh interval</label>
+            <div>
+              <div class="inline"><input type="number" id="interval" data-draft="interval" min="1" max="1440" value="1"><span class="muted">minutes</span></div>
+              <div class="field-error" id="intervalError">Enter a whole number from 1 to 1440.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="section">
+        <h2>Behavior</h2>
+        <div class="card">
+          <label class="row"><div class="label">Show balloon notifications after refresh restores icons</div>
+            <span class="switch"><input type="checkbox" data-draft="balloons" checked><i></i></span></label>
+          <label class="row"><div class="label">Leave entries alone when their executable is confirmed missing</div>
+            <span class="switch"><input type="checkbox" data-draft="skipMissing" checked><i></i></span></label>
+        </div>
+      </div>
+    </div>
+
+    <div class="page" id="appearance" role="tabpanel">
+      <p class="lead">Choose how Tray Keeper's windows look. The change previews right away; Save keeps it.</p>
+      <div class="section">
+        <h2>Theme</h2>
+        <div class="card">
+          <div class="row"><div class="label">Theme<span>System follows the Windows light or dark setting.</span></div>
+            <div class="segmented" role="group" aria-label="Theme">
+              <button type="button" data-app-theme="system" aria-pressed="true">System</button>
+              <button type="button" data-app-theme="light" aria-pressed="false">Light</button>
+              <button type="button" data-app-theme="dark" aria-pressed="false">Dark</button>
+            </div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="page" id="updates" role="tabpanel">
+      <p class="lead">Choose when Tray Keeper checks GitHub for newer releases and updates.</p>
+      <div class="card status-card" id="updStatus" aria-live="polite">
+        <span class="dot" id="updDot"></span>
+        <div><b id="updTitle">Tray Keeper is up to date</b>
+          <div class="muted" id="updSub">Version 1.3.2 is the latest stable version · Last checked 2026-10-20 10:33</div></div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <div class="update-row">
+          <label for="freq">Check for updates</label>
+          <select id="freq" data-draft="frequency">
+            <option value="hourly" selected>Once an hour</option>
+            <option value="daily">Once a day (default)</option>
+            <option value="weekly">Once a week</option>
+            <option value="monthly">Once a month</option>
+            <option value="never">Never</option>
+          </select>
+          <button class="btn" id="checkNow" type="button">Check for updates</button>
+        </div>
+      </div>
+      <div class="card callout" style="margin-top:14px">
+        <b>Reliable automated updates</b>
+        <span class="muted">Setup installers are downloaded from official GitHub releases and verified with SHA-256 before running. Scheduled background checks stay quiet and never interrupt icon management.</span>
+      </div>
+    </div>
+
+    <div class="page" id="about" role="tabpanel">
+      <div class="about-head">
+        <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABGdBTUEAALGPC/xhBQAAAAlwSFlzAAAOwgAADsIBFShKgAAAAn1JREFUWEfVlz1MGzEUxz0yMjIyMjIydGDMyNgxIxsMFedUlQhDFXWoEAugDo3EypCBoR0qZalEh4oTsU/XqqVXJMQhoI2EEIcIwuj5yN352feZLPyl3xI/v/dsP79zCHmWWrUnicXmFV7xKWw2Xq0czhGLbxHKPUK5MMN8Qp02WWEv8fTqes1nCeVdPVgezJY7M5Ko09IdlwR2bdWbwK6zBWdMeUdzVp196bOwxhv8CWYX24lxbHs6HRxOVVhweNKYYcs4bCw4K21CdWbe/xKzG7/R78w3HwXlNexgFOjnMzFU7eNfNN5bxOHh7NvYSVUWdo6j4KDFzim26eLwJOxiurOyTL/7KfrBfRTc+38nJpuuamexQL2Wjd4MdlSFiTeOcM9vo+DB4EHMbR5pdk/U4gSgZeoGpWl/70fBQfXdE80mwuL1RAK8rhmUZHnPV4JDMthGwWLNOAGoSmyQcOxfDUSre6GNDYFthu0eav/4Rh4HtlNQE0i/gknHplVNvf0hExwKChAKEdvpJK9iRgfsOFeRc9DWt3/RGKyye3StjM9/8DQfRhq9hTgB6ExwNbAR5fIK2aeBEqT55VyOrX+9NP5eCMudjhMAZXwBIYnk9QLtHKgVDzuF56XDbDW4TCC9EAE4V2gqJhmbTSZOC4cPjyGnG5qSuB08GD44GcBRpz5g4TGJJyAg2N19fDOW9nzNJpMGX8dhVVnskzYJ8WL7jzj0A7FWpugAi7v5TzP55ueuNnl0+nrlpyn8OGW8/0vTl72mlMKX8egvJNjNwivHChtUU64AO84Dqh0KLvfMi0jWRY8WrA1P/hmpvOo8gWPo47AzSeAKQ+08Nz0CtxOt2rhL9I0AAAAASUVORK5CYII=" alt="">
+        <div><h3>Tray Keeper v1.3.2</h3>
+          <div class="muted">Build 1.3.2.0 · built 2026-10-20 11:12 · by alexlvcom · <a href="#" data-preview="opens github.com/alexlvcom/TrayKeeper">github.com/alexlvcom/TrayKeeper</a></div></div>
+      </div>
+      <div class="section">
+        <h2 style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--text)">Release notes for v1.3.2:</h2>
+        <div class="card notes" tabindex="0">
+          <h4>Main changes</h4>
+          <ul>
+            <li>Settings now has a Save / Cancel footer on every tab, matching the other AlexLV Windows apps. Changes are drafts until Save, which applies them at once without a restart; Cancel, Esc, or closing the window discards them. This includes the update schedule and Start with Windows.</li>
+            <li>Save reports when settings cannot be written and keeps the window open with your changes, instead of failing silently. Settings are now written atomically.</li>
+          </ul>
+          <h4>Other updates</h4>
+          <ul><li>Updated the user guide for the Settings tabs and the current tray menu.</li></ul>
+        </div>
+        <div class="about-actions">
+          <a href="#" data-open="history">View full change history</a>
+          <button class="btn" id="copyDetails" type="button">Copy details</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="page" id="diagnostics" role="tabpanel">
+      <p class="lead">Where Tray Keeper runs from and keeps its settings, registry backups and logs.</p>
+      <div class="card paths">
+        <div class="row"><label for="p-exe">Executable</label><input class="path" id="p-exe" type="text" readonly value="C:\Users\alexander.yazemov\AppData\Local\Programs\Tray Keeper\TrayKeeper.exe"><button class="btn" data-preview="opens the folder in File Explorer">Open</button></div>
+        <div class="row"><label for="p-set">Settings</label><input class="path" id="p-set" type="text" readonly value="C:\Users\alexander.yazemov\AppData\Local\TrayKeeper\settings.json"><button class="btn" data-preview="opens the folder in File Explorer">Open</button></div>
+        <div class="row"><label for="p-bak">Backups</label><input class="path" id="p-bak" type="text" readonly value="C:\Users\alexander.yazemov\AppData\Local\TrayKeeper\Backups"><button class="btn" data-preview="opens the folder in File Explorer">Open</button></div>
+        <div class="row"><label for="p-log">Logs</label><input class="path" id="p-log" type="text" readonly value="C:\Users\alexander.yazemov\AppData\Local\TrayKeeper\Logs"><button class="btn" id="openFail" title="Preview: shows the failure message">Open</button></div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span class="dirty" id="dirty" aria-live="polite"></span>
+      <button class="btn primary" id="save" type="button">Save</button>
+      <button class="btn" id="cancel" type="button">Cancel</button>
+    </div>
+  </section>
+
+  <!-- ===== Last results window ===== -->
+  <section class="window app-window results" id="win-results" role="dialog" aria-labelledby="results-title">
+    <div class="titlebar">
+      <img class="app-icon" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABGdBTUEAALGPC/xhBQAAAAlwSFlzAAAOwgAADsIBFShKgAAAAn1JREFUWEfVlz1MGzEUxz0yMjIyMjIydGDMyNgxIxsMFedUlQhDFXWoEAugDo3EypCBoR0qZalEh4oTsU/XqqVXJMQhoI2EEIcIwuj5yN352feZLPyl3xI/v/dsP79zCHmWWrUnicXmFV7xKWw2Xq0czhGLbxHKPUK5MMN8Qp02WWEv8fTqes1nCeVdPVgezJY7M5Ko09IdlwR2bdWbwK6zBWdMeUdzVp196bOwxhv8CWYX24lxbHs6HRxOVVhweNKYYcs4bCw4K21CdWbe/xKzG7/R78w3HwXlNexgFOjnMzFU7eNfNN5bxOHh7NvYSVUWdo6j4KDFzim26eLwJOxiurOyTL/7KfrBfRTc+38nJpuuamexQL2Wjd4MdlSFiTeOcM9vo+DB4EHMbR5pdk/U4gSgZeoGpWl/70fBQfXdE80mwuL1RAK8rhmUZHnPV4JDMthGwWLNOAGoSmyQcOxfDUSre6GNDYFthu0eav/4Rh4HtlNQE0i/gknHplVNvf0hExwKChAKEdvpJK9iRgfsOFeRc9DWt3/RGKyye3StjM9/8DQfRhq9hTgB6ExwNbAR5fIK2aeBEqT55VyOrX+9NP5eCMudjhMAZXwBIYnk9QLtHKgVDzuF56XDbDW4TCC9EAE4V2gqJhmbTSZOC4cPjyGnG5qSuB08GD44GcBRpz5g4TGJJyAg2N19fDOW9nzNJpMGX8dhVVnskzYJ8WL7jzj0A7FWpugAi7v5TzP55ueuNnl0+nrlpyn8OGW8/0vTl72mlMKX8egvJNjNwivHChtUU64AO84Dqh0KLvfMi0jWRY8WrA1P/hmpvOo8gWPo47AzSeAKQ+08Nz0CtxOt2rhL9I0AAAAASUVORK5CYII=" alt="">
+      <div class="title" id="results-title">Tray Keeper — last results</div>
+      <div class="winctl"><span><svg><use href="#i-min"/></svg></span><span><svg><use href="#i-max"/></svg></span><span data-close="results" title="Close"><svg><use href="#i-x"/></svg></span></div>
+    </div>
+    <div class="pagebody" id="resultsBody"></div>
+    <div class="footer">
+      <div class="left">
+        <button class="btn" id="restoreBtn" type="button">Restore last changes</button>
+        <button class="btn" data-preview="opens the Logs folder">Open log folder</button>
+        <button class="btn" id="restartExplorer" type="button">Restart Explorer</button>
+      </div>
+      <button class="btn" id="refreshNow" type="button">Refresh now</button>
+      <button class="btn primary" data-close="results" type="button">Close</button>
+    </div>
+  </section>
+
+  <!-- ===== Change history window ===== -->
+  <section class="window app-window" id="win-history" role="dialog" aria-labelledby="history-title" style="width:620px">
+    <div class="titlebar">
+      <img class="app-icon" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABGdBTUEAALGPC/xhBQAAAAlwSFlzAAAOwgAADsIBFShKgAAAAn1JREFUWEfVlz1MGzEUxz0yMjIyMjIydGDMyNgxIxsMFedUlQhDFXWoEAugDo3EypCBoR0qZalEh4oTsU/XqqVXJMQhoI2EEIcIwuj5yN352feZLPyl3xI/v/dsP79zCHmWWrUnicXmFV7xKWw2Xq0czhGLbxHKPUK5MMN8Qp02WWEv8fTqes1nCeVdPVgezJY7M5Ko09IdlwR2bdWbwK6zBWdMeUdzVp196bOwxhv8CWYX24lxbHs6HRxOVVhweNKYYcs4bCw4K21CdWbe/xKzG7/R78w3HwXlNexgFOjnMzFU7eNfNN5bxOHh7NvYSVUWdo6j4KDFzim26eLwJOxiurOyTL/7KfrBfRTc+38nJpuuamexQL2Wjd4MdlSFiTeOcM9vo+DB4EHMbR5pdk/U4gSgZeoGpWl/70fBQfXdE80mwuL1RAK8rhmUZHnPV4JDMthGwWLNOAGoSmyQcOxfDUSre6GNDYFthu0eav/4Rh4HtlNQE0i/gknHplVNvf0hExwKChAKEdvpJK9iRgfsOFeRc9DWt3/RGKyye3StjM9/8DQfRhq9hTgB6ExwNbAR5fIK2aeBEqT55VyOrX+9NP5eCMudjhMAZXwBIYnk9QLtHKgVDzuF56XDbDW4TCC9EAE4V2gqJhmbTSZOC4cPjyGnG5qSuB08GD44GcBRpz5g4TGJJyAg2N19fDOW9nzNJpMGX8dhVVnskzYJ8WL7jzj0A7FWpugAi7v5TzP55ueuNnl0+nrlpyn8OGW8/0vTl72mlMKX8egvJNjNwivHChtUU64AO84Dqh0KLvfMi0jWRY8WrA1P/hmpvOo8gWPo47AzSeAKQ+08Nz0CtxOt2rhL9I0AAAAASUVORK5CYII=" alt="">
+      <div class="title" id="history-title">Tray Keeper Change History</div>
+      <div class="winctl"><span data-close="history" title="Close"><svg><use href="#i-x"/></svg></span></div>
+    </div>
+    <div class="pagebody" style="padding:16px 20px">
+      <div class="card history" tabindex="0">
+        <h4>1.3.2 · 2026-10-20</h4>
+        <ul><li>Settings now has a Save / Cancel footer on every tab. Changes are drafts until Save; Cancel, Esc, or closing the window discards them.</li>
+          <li>Save reports when settings cannot be written and keeps the window open with your changes.</li>
+          <li>Updated the user guide for the Settings tabs and the current tray menu.</li></ul>
+        <h4>1.3.1 · 2026-10-19</h4>
+        <ul><li>Start the update download timeout when Update is clicked. Report timeouts and allow retrying.</li></ul>
+        <h4>1.3.0 · 2026-10-17</h4>
+        <ul><li>Added Windows installer installing per-user to %LOCALAPPDATA%\Programs\Tray Keeper with automatic upgrade and uninstall shutdown.</li>
+          <li>Added in-app update checks against GitHub releases with configurable check frequency and SHA-256 verification.</li>
+          <li>Reorganized Settings with dedicated tabs for Preferences, Updates, and About.</li></ul>
+      </div>
+    </div>
+    <div class="footer"><button class="btn primary" data-close="history" type="button">Close</button></div>
+  </section>
+</main>
+
+<!-- Taskbar + tray -->
+<div class="taskbar">
+  <button class="tray-icon" id="trayIcon" aria-haspopup="menu" aria-expanded="false" title="">
+    <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABGdBTUEAALGPC/xhBQAAAAlwSFlzAAAOwgAADsIBFShKgAAAAn1JREFUWEfVlz1MGzEUxz0yMjIyMjIydGDMyNgxIxsMFedUlQhDFXWoEAugDo3EypCBoR0qZalEh4oTsU/XqqVXJMQhoI2EEIcIwuj5yN352feZLPyl3xI/v/dsP79zCHmWWrUnicXmFV7xKWw2Xq0czhGLbxHKPUK5MMN8Qp02WWEv8fTqes1nCeVdPVgezJY7M5Ko09IdlwR2bdWbwK6zBWdMeUdzVp196bOwxhv8CWYX24lxbHs6HRxOVVhweNKYYcs4bCw4K21CdWbe/xKzG7/R78w3HwXlNexgFOjnMzFU7eNfNN5bxOHh7NvYSVUWdo6j4KDFzim26eLwJOxiurOyTL/7KfrBfRTc+38nJpuuamexQL2Wjd4MdlSFiTeOcM9vo+DB4EHMbR5pdk/U4gSgZeoGpWl/70fBQfXdE80mwuL1RAK8rhmUZHnPV4JDMthGwWLNOAGoSmyQcOxfDUSre6GNDYFthu0eav/4Rh4HtlNQE0i/gknHplVNvf0hExwKChAKEdvpJK9iRgfsOFeRc9DWt3/RGKyye3StjM9/8DQfRhq9hTgB6ExwNbAR5fIK2aeBEqT55VyOrX+9NP5eCMudjhMAZXwBIYnk9QLtHKgVDzuF56XDbDW4TCC9EAE4V2gqJhmbTSZOC4cPjyGnG5qSuB08GD44GcBRpz5g4TGJJyAg2N19fDOW9nzNJpMGX8dhVVnskzYJ8WL7jzj0A7FWpugAi7v5TzP55ueuNnl0+nrlpyn8OGW8/0vTl72mlMKX8egvJNjNwivHChtUU64AO84Dqh0KLvfMi0jWRY8WrA1P/hmpvOo8gWPo47AzSeAKQ+08Nz0CtxOt2rhL9I0AAAAASUVORK5CYII=" alt="Tray Keeper">
+    <span class="tip" id="trayTip">Tray Keeper v1.3.2 — auto-refresh every minute</span>
+  </button>
+  <div class="clock">11:24<br>2026-10-20</div>
+</div>
+
+<nav class="menu" id="trayMenu" role="menu" aria-label="Tray Keeper">
+  <button role="menuitem" class="default" data-action="refresh"><svg><use href="#i-refresh"/></svg><span><u>R</u>efresh tray icons</span></button>
+  <button role="menuitem" data-action="results"><svg><use href="#i-list"/></svg><span><u>S</u>how last results</span></button>
+  <hr>
+  <button role="menuitem" data-action="settings"><svg><use href="#i-gear"/></svg><span>Se<u>t</u>tings…</span></button>
+  <button role="menuitem" data-action="exit"><svg><use href="#i-exit"/></svg><span>E<u>x</u>it</span></button>
+</nav>
+
+<div class="balloon" id="balloon" role="status">
+  <svg class="kind" id="balloonKind"><use href="#i-info"/></svg>
+  <div><b>Tray Keeper</b><span id="balloonText"></span></div>
+</div>
+
+<!-- Generic modal host -->
+<div class="scrim" id="scrim">
+  <section class="window dialog" id="dialog" role="alertdialog" aria-labelledby="dlgTitle" aria-describedby="dlgMsg">
+    <div class="titlebar">
+      <img class="app-icon" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABGdBTUEAALGPC/xhBQAAAAlwSFlzAAAOwgAADsIBFShKgAAAAn1JREFUWEfVlz1MGzEUxz0yMjIyMjIydGDMyNgxIxsMFedUlQhDFXWoEAugDo3EypCBoR0qZalEh4oTsU/XqqVXJMQhoI2EEIcIwuj5yN352feZLPyl3xI/v/dsP79zCHmWWrUnicXmFV7xKWw2Xq0czhGLbxHKPUK5MMN8Qp02WWEv8fTqes1nCeVdPVgezJY7M5Ko09IdlwR2bdWbwK6zBWdMeUdzVp196bOwxhv8CWYX24lxbHs6HRxOVVhweNKYYcs4bCw4K21CdWbe/xKzG7/R78w3HwXlNexgFOjnMzFU7eNfNN5bxOHh7NvYSVUWdo6j4KDFzim26eLwJOxiurOyTL/7KfrBfRTc+38nJpuuamexQL2Wjd4MdlSFiTeOcM9vo+DB4EHMbR5pdk/U4gSgZeoGpWl/70fBQfXdE80mwuL1RAK8rhmUZHnPV4JDMthGwWLNOAGoSmyQcOxfDUSre6GNDYFthu0eav/4Rh4HtlNQE0i/gknHplVNvf0hExwKChAKEdvpJK9iRgfsOFeRc9DWt3/RGKyye3StjM9/8DQfRhq9hTgB6ExwNbAR5fIK2aeBEqT55VyOrX+9NP5eCMudjhMAZXwBIYnk9QLtHKgVDzuF56XDbDW4TCC9EAE4V2gqJhmbTSZOC4cPjyGnG5qSuB08GD44GcBRpz5g4TGJJyAg2N19fDOW9nzNJpMGX8dhVVnskzYJ8WL7jzj0A7FWpugAi7v5TzP55ueuNnl0+nrlpyn8OGW8/0vTl72mlMKX8egvJNjNwivHChtUU64AO84Dqh0KLvfMi0jWRY8WrA1P/hmpvOo8gWPo47AzSeAKQ+08Nz0CtxOt2rhL9I0AAAAASUVORK5CYII=" alt="">
+      <div class="title" id="dlgTitle">Tray Keeper</div>
+      <div class="winctl"><span id="dlgX" title="Close"><svg><use href="#i-x"/></svg></span></div>
+    </div>
+    <div class="body">
+      <svg class="icon info" id="dlgIcon"><use href="#i-info"/></svg>
+      <div class="msg" id="dlgMsg"></div>
+    </div>
+    <div class="footer" id="dlgButtons"></div>
+  </section>
+</div>
+
+<div class="toast" role="status"></div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+/* ---------- windows ---------- */
+function openWindow(name) {
+  $$('.app-window').forEach(w => w.classList.toggle('open', w.id === 'win-' + name));
+  closeMenu();
+}
+function closeWindow(name) {
+  if (name === 'settings') return cancelSettings();
+  $('#win-' + name).classList.remove('open');
+}
+$$('[data-close]').forEach(el => el.addEventListener('click', () => closeWindow(el.dataset.close)));
+
+/* ---------- modal dialogs ---------- */
+let dialogKeyHandler = null;
+function showDialog({ title = 'Tray Keeper', icon = 'info', html, buttons, wide = false }) {
+  return new Promise(resolve => {
+    $('#dlgTitle').textContent = title;
+    $('#dlgIcon').setAttribute('class', 'icon ' + ({ question: 'info', info: 'info', warn: 'warn', error: 'error', ok: 'ok' }[icon]));
+    $('#dlgIcon use').setAttribute('href', '#i-' + icon);
+    $('#dlgMsg').innerHTML = html;
+    $('#dialog').classList.toggle('wide', wide);
+    const host = $('#dlgButtons'); host.innerHTML = '';
+    const finish = v => { $('#scrim').classList.remove('open'); document.removeEventListener('keydown', dialogKeyHandler); resolve(v); };
+    (buttons || [{ label: 'OK', value: 'ok', primary: true, default: true }]).forEach(b => {
+      const btn = document.createElement('button');
+      btn.className = 'btn' + (b.primary ? ' primary' : ''); btn.textContent = b.label; btn.type = 'button';
+      btn.addEventListener('click', () => finish(b.value));
+      host.appendChild(btn);
+      if (b.default) setTimeout(() => btn.focus(), 0);
+    });
+    $('#dlgX').onclick = () => finish(buttons?.find(b => b.cancel)?.value ?? 'cancel');
+    dialogKeyHandler = e => { if (e.key === 'Escape') finish(buttons?.find(b => b.cancel)?.value ?? 'cancel'); };
+    document.addEventListener('keydown', dialogKeyHandler);
+    $('#scrim').classList.add('open');
+  });
+}
+const msgBox = (html, icon = 'info') => showDialog({ html: `<p>${html}</p>`, icon });
+
+/* ---------- tray ---------- */
+const menu = $('#trayMenu'), tray = $('#trayIcon');
+function closeMenu() { menu.classList.remove('open'); tray.setAttribute('aria-expanded', 'false'); }
+function openMenu() { menu.classList.add('open'); tray.setAttribute('aria-expanded', 'true'); menu.querySelector('button').focus(); }
+tray.addEventListener('click', e => { e.stopPropagation(); menu.classList.contains('open') ? closeMenu() : openMenu(); });
+tray.addEventListener('dblclick', () => { closeMenu(); runRefresh(); });
+tray.addEventListener('contextmenu', e => { e.preventDefault(); openMenu(); });
+document.addEventListener('click', e => { if (!menu.contains(e.target) && e.target !== tray) closeMenu(); });
+menu.addEventListener('keydown', e => {
+  const items = $$('button', menu), i = items.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown') { items[(i + 1) % items.length].focus(); e.preventDefault(); }
+  if (e.key === 'ArrowUp') { items[(i - 1 + items.length) % items.length].focus(); e.preventDefault(); }
+  if (e.key === 'Escape') closeMenu();
+  const hot = { r: 'refresh', s: 'results', t: 'settings', x: 'exit' }[e.key.toLowerCase()];
+  if (hot) menu.querySelector(`[data-action="${hot}"]`).click();
+});
+menu.addEventListener('click', e => {
+  const action = e.target.closest('[data-action]')?.dataset.action; if (!action) return;
+  closeMenu();
+  if (action === 'refresh') runRefresh();
+  if (action === 'results') { renderResults(true); openWindow('results'); }
+  if (action === 'settings') openSettings('prefs');
+  if (action === 'exit') toast('Preview: Tray Keeper exits and removes its tray icon');
+});
+
+/* ---------- balloons ---------- */
+const BALLOONS = {
+  applied: ['info', 'Enabled 2 duplicate tray icon entries.'],
+  none: ['info', 'No disabled duplicate tray icons were found.'],
+  failed: ['error', 'Refresh failed. See the log for details.'],
+};
+let balloonTimer;
+function showBalloon(kind) {
+  if (!saved.balloons && kind !== 'failed') return;
+  const [icon, text] = BALLOONS[kind];
+  $('#balloonKind use').setAttribute('href', '#i-' + icon);
+  $('#balloonKind').style.color = icon === 'error' ? 'var(--danger)' : 'var(--accent)';
+  $('#balloonText').textContent = text;
+  const b = $('#balloon'); b.classList.remove('open'); void b.offsetWidth; b.classList.add('open');
+  clearTimeout(balloonTimer); balloonTimer = setTimeout(() => b.classList.remove('open'), 5000);
+}
+$('#balloon').addEventListener('click', () => { $('#balloon').classList.remove('open'); renderResults(true); openWindow('results'); });
+function runRefresh() { hasRun = true; restorable = true; showBalloon('applied'); if ($('#win-results').classList.contains('open')) renderResults(true); }
+
+/* ---------- settings draft model ---------- */
+const DEFAULTS = { startWithWindows: true, refreshOnStart: true, autoRefresh: true, interval: '1', balloons: true, skipMissing: true, frequency: 'hourly', theme: 'system' };
+let saved = { ...DEFAULTS }, draft = { ...saved };
+function readControl(el) { return el.type === 'checkbox' ? el.checked : el.value; }
+function loadDraftIntoControls() {
+  $$('[data-draft]').forEach(el => { const v = draft[el.dataset.draft]; if (el.type === 'checkbox') el.checked = v; else el.value = v; });
+  setThemeButtons(draft.theme); syncDependent(); validate(); markDirty();
+}
+function syncDependent() { const on = draft.autoRefresh; $('#intervalRow').classList.toggle('off', !on); $('#interval').disabled = !on; }
+function validate() {
+  const n = Number(draft.interval), ok = !draft.autoRefresh || (Number.isInteger(n) && n >= 1 && n <= 1440);
+  $('#interval').classList.toggle('invalid', !ok); $('#intervalError').classList.toggle('show', !ok);
+  return ok;
+}
+function markDirty() {
+  const changed = Object.keys(draft).filter(k => String(draft[k]) !== String(saved[k])).length;
+  $('#dirty').textContent = changed ? `${changed} unsaved change${changed > 1 ? 's' : ''}` : '';
+}
+$$('[data-draft]').forEach(el => el.addEventListener('input', () => {
+  draft[el.dataset.draft] = readControl(el); syncDependent(); validate(); markDirty();
+}));
+function setThemeButtons(choice) { $$('[data-app-theme]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.appTheme === choice))); }
+// The theme previews live while editing (so the user sees it) and reverts on Cancel.
+$$('[data-app-theme]').forEach(b => b.addEventListener('click', () => {
+  draft.theme = b.dataset.appTheme; setThemeButtons(draft.theme); applyTheme(draft.theme); markDirty();
+}));
+function selectTab(page) {
+  $$('#win-settings .tab').forEach(t => t.setAttribute('aria-selected', String(t.dataset.page === page)));
+  $$('#win-settings .page').forEach(p => p.classList.toggle('active', p.id === page));
+}
+function openSettings(page) { draft = { ...saved }; loadDraftIntoControls(); selectTab(page); openWindow('settings'); setTimeout(() => $('#save').focus(), 0); }
+function cancelSettings() { draft = { ...saved }; applyTheme(saved.theme); $('#win-settings').classList.remove('open'); }
+async function saveSettings() {
+  if (!validate()) { selectTab('prefs'); $('#interval').focus(); return; }
+  if ($('#simSaveFail').checked) {
+    await showDialog({ icon: 'error', html: `<p>Could not save settings. Your changes are still open in this window.</p><p class="muted">Access to the path 'C:\\Users\\alexander.yazemov\\AppData\\Local\\TrayKeeper\\settings.json.tmp' is denied.</p>` });
+    return;
+  }
+  const startupChanged = draft.startWithWindows !== saved.startWithWindows;
+  saved = { ...draft };
+  applyTheme(saved.theme);
+  $('#trayTip').textContent = saved.autoRefresh
+    ? `Tray Keeper v1.3.2 — auto-refresh every ${saved.interval === '1' ? 'minute' : saved.interval + ' minutes'}` : 'Tray Keeper v1.3.2';
+  if (startupChanged && $('#simStartupFail').checked)
+    await showDialog({ icon: 'warn', html: '<p>Settings were saved, but the startup setting could not be changed. See the log for details.</p>' });
+  $('#win-settings').classList.remove('open');
+  toast('Preview: settings saved and applied without restart');
+}
+$('#save').addEventListener('click', saveSettings);
+$('#cancel').addEventListener('click', cancelSettings);
+$('#win-settings').addEventListener('keydown', e => {
+  if ($('#scrim').classList.contains('open')) return;
+  if (e.key === 'Escape') cancelSettings();
+  if (e.key === 'Enter' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A') { e.preventDefault(); saveSettings(); }
+});
+$$('#win-settings .tab').forEach(t => t.addEventListener('click', () => selectTab(t.dataset.page)));
+
+/* ---------- updates ---------- */
+function setStatus(kind, title, sub) {
+  $('#updDot').className = 'dot ' + kind; $('#updTitle').textContent = title; $('#updSub').textContent = sub;
+}
+const stamp = () => '2026-10-20 ' + new Date().toTimeString().slice(0, 5);
+$('#checkNow').addEventListener('click', async () => {
+  const btn = $('#checkNow'); btn.disabled = true; btn.textContent = 'Checking…';
+  setStatus('checking', 'Checking for updates…', 'Checking GitHub for updates...');
+  await new Promise(r => setTimeout(r, 1100));
+  btn.disabled = false; btn.textContent = 'Check for updates';
+  const sim = $('#simUpdate').value;
+  if (sim === 'current') {
+    setStatus('', 'Tray Keeper is up to date', `Version 1.3.2 is the latest stable version · Last checked ${stamp()}`);
+    msgBox('You are running version 1.3.2.<br><br>No newer installer version is available.');
+  } else if (sim === 'error') {
+    setStatus('failed', 'Could not check for updates', `Running v1.3.2 · Last attempt ${stamp()}`);
+    showDialog({ icon: 'warn', html: '<p>Could not check for updates. Please try again later.</p><p class="muted">No such host is known. (api.github.com:443)</p>' });
+  } else {
+    setStatus('available', 'Version 1.3.3 is available', `You have 1.3.2 · Last checked ${stamp()}`);
+    showUpdateDialog();
+  }
+});
+
+async function showUpdateDialog() {
+  const intro = `<p><b>Version 1.3.3 is available.</b> You have 1.3.2.</p><p class="muted">Update will download and open the installer. Setup will close the app and restart it after updating.</p>`;
+  const render = (html, buttons) => {
+    $('#dlgMsg').innerHTML = html;
+    const host = $('#dlgButtons'); host.innerHTML = '';
+    buttons.forEach(b => { const el = document.createElement('button'); el.className = 'btn' + (b.primary ? ' primary' : '');
+      el.textContent = b.label; el.disabled = !!b.disabled; el.onclick = b.onClick; host.appendChild(el); if (b.focus) setTimeout(() => el.focus()); });
+  };
+  const close = () => { $('#scrim').classList.remove('open'); };
+  showDialog({ title: 'Update Tray Keeper (v1.3.2)', icon: 'info', html: intro, buttons: [] });
+  const offer = (prefix = '') => render(prefix + intro, [
+    { label: 'Update', primary: true, focus: true, onClick: download },
+    { label: 'Later', onClick: () => { close(); toast('Preview: 1.3.3 is not offered again until a manual check'); } }]);
+  async function download() {
+    render(`<p>Downloading and verifying the installer…</p><div class="progress"><i id="bar"></i></div><p class="muted" id="bytes">0 of 48.9 MB</p>`,
+      [{ label: 'Update', primary: true, disabled: true }, { label: 'Later', onClick: close }]);
+    const outcome = $('#simDownload').value;
+    for (let p = 0; p <= (outcome === 'ok' ? 100 : 46); p += 4) {
+      await new Promise(r => setTimeout(r, 60));
+      if (!$('#bar')) return;
+      $('#bar').style.width = p + '%'; $('#bytes').textContent = `${(48.9 * p / 100).toFixed(1)} of 48.9 MB`;
+    }
+    if (outcome === 'ok') {
+      render(`<p>Installer verified (SHA-256 matches the release).</p><p class="muted">Opening TrayKeeper-Setup.exe. Setup closes Tray Keeper and restarts it after updating.</p>`,
+        [{ label: 'Close', primary: true, focus: true, onClick: close }]);
+      setTimeout(close, 1800);
+    } else if (outcome === 'timeout') {
+      offer(`<p class="error-text">The download timed out. Check your connection and click Update to try again.</p>`);
+    } else {
+      offer(`<p class="error-text">Update failed. Please try again.<br><span class="muted">Installer checksum did not match. The installer was not started.</span></p>`);
+    }
+  }
+  offer();
+}
+
+/* ---------- about ---------- */
+$('#copyDetails').addEventListener('click', () => msgBox('Application details copied to clipboard.'));
+$('#openFail').addEventListener('click', () => showDialog({ icon: 'error', html: `<p>Failed to open folder: Access is denied.</p>` }));
+
+/* ---------- results ---------- */
+let hasRun = true, restorable = true;
+function renderResults(withData) {
+  const body = $('#resultsBody');
+  $('#restoreBtn').disabled = !(withData && hasRun && restorable);
+  if (!withData || !hasRun) {
+    body.innerHTML = `<div class="card empty"><b>Tray Keeper has not run a refresh yet.</b>Choose “Refresh tray icons” from the tray menu to check for duplicate entries.</div>`;
+    return;
+  }
+  body.innerHTML = `
+    <dl class="card summary">
+      <dt>Refreshed</dt><dd>2026-10-20 11:22:41</dd>
+      <dt>Result</dt><dd><b>Enabled 2 duplicate tray icon entries.</b></dd>
+      <dt>Scanned</dt><dd>41 tray icon entries, 17 currently enabled</dd>
+      <dt>Backup</dt><dd><code>C:\\Users\\alexander.yazemov\\AppData\\Local\\TrayKeeper\\Backups\\NotifyIconSettings-20261020-112241.reg</code></dd>
+    </dl>
+    <div class="scroll">
+      <h3>Enabled <span class="count">2 entries</span></h3>
+      <div class="card">
+        <div class="entry"><div class="name">Terminal Session Keeper</div><div class="kv">
+          <span>Old path</span><code>C:\\projects\\TerminalSessionKeeper\\publish\\TerminalSessionKeeper.exe</code>
+          <span>New path</span><code>C:\\Users\\alexander.yazemov\\AppData\\Local\\Programs\\Terminal Session Keeper\\TerminalSessionKeeper.exe</code>
+          <span>Previous state</span><span>IsPromoted was 0 (hidden)</span>
+          <span>Reason</span><span>Same executable name as an enabled entry after an install path change.</span></div></div>
+        <div class="entry"><div class="name">Clipped Image to Path</div><div class="kv">
+          <span>Old path</span><code>C:\\Tools\\ClippedImageToPath\\ClippedImageToPath.exe</code>
+          <span>New path</span><code>C:\\Users\\alexander.yazemov\\AppData\\Local\\Programs\\Clipped Image to Path\\ClippedImageToPath.exe</code>
+          <span>Previous state</span><span>IsPromoted was not set (hidden by default)</span>
+          <span>Reason</span><span>Same product and publisher as an enabled entry.</span></div></div>
+      </div>
+      <h3>Looked similar but skipped <span class="count">1 entry</span></h3>
+      <div class="card"><div class="entry"><div class="name">Monitor Mover</div><div class="kv">
+        <span>Path</span><code>C:\\projects\\MonitorMover\\bin\\Release\\MonitorMover.exe</code>
+        <span>Closest enabled</span><code>C:\\Users\\alexander.yazemov\\AppData\\Local\\Programs\\Monitor Mover\\MonitorMover.exe</code>
+        <span>Reason</span><span>Executable is confirmed missing; left alone by your preference.</span></div></div></div>
+      <h3>Enabled entries used as matching sources <span class="count">17 entries</span></h3>
+      <div class="card"><div class="entry"><div class="name">Tray Keeper</div><code>C:\\Users\\alexander.yazemov\\AppData\\Local\\Programs\\Tray Keeper\\TrayKeeper.exe</code></div>
+        <div class="entry"><div class="name">KeyFlip</div><code>C:\\Users\\alexander.yazemov\\AppData\\Local\\Programs\\Key Flip\\KeyFlip.exe</code></div>
+        <div class="entry muted">…15 more</div></div>
+      <p class="note">Changes take effect immediately; restarting Explorer is not required.</p>
+    </div>`;
+}
+$('#refreshNow').addEventListener('click', () => { runRefresh(); renderResults(true); });
+$('#restoreBtn').addEventListener('click', async () => {
+  const v = await showDialog({ icon: 'question', html: '<p>Revert the tray icon entries that Tray Keeper enabled during the last refresh?</p>',
+    buttons: [{ label: 'Yes', value: 'yes', primary: true }, { label: 'No', value: 'no', default: true, cancel: true }] });
+  if (v !== 'yes') return;
+  restorable = false; await msgBox('Reverted 2 entries.'); renderResults(true);
+});
+$('#restartExplorer').addEventListener('click', async () => {
+  const v = await showDialog({ icon: 'warn', wide: true, html: `<p>Restarting Explorer closes all File Explorer windows and briefly removes the taskbar.</p>
+    <p>This is not needed for tray icon changes to take effect — they apply immediately. Use this only if the taskbar has stopped responding to changes.</p><p><b>Restart Explorer now?</b></p>`,
+    buttons: [{ label: 'Yes', value: 'yes', primary: true }, { label: 'No', value: 'no', default: true, cancel: true }] });
+  if (v === 'yes') msgBox('Explorer was restarted.', 'ok');
+});
+
+/* ---------- harness ---------- */
+$$('.harness [data-open], #win-settings [data-open]').forEach(b => b.addEventListener('click', e => {
+  e.preventDefault(); e.stopPropagation();
+  const [what, page] = b.dataset.open.split(':');
+  if (what === 'menu') return openMenu();
+  if (what === 'settings') return openSettings(page);
+  if (what === 'results') { hasRun = true; renderResults(true); return openWindow('results'); }
+  if (what === 'results-empty') { renderResults(false); return openWindow('results'); }
+  if (what === 'history') return openWindow('history');
+  if (what === 'update') { $('#simDownload'); return showUpdateDialog(); }
+}));
+$$('[data-balloon]').forEach(b => b.addEventListener('click', () => showBalloon(b.dataset.balloon)));
+function toast(msg) { const t = $('.toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 1800); }
+
+document.addEventListener('DOMContentLoaded', () => {
+  // ?theme=dark&screen=settings:updates|results|history|menu|update opens a screen directly (for review links).
+  const q = new URLSearchParams(location.search);
+  const [what, page] = (q.get('screen') || 'settings:prefs').split(':');
+  if (what === 'settings') openSettings(page || 'prefs');
+  else if (what === 'results') { renderResults(true); openWindow('results'); }
+  else if (what === 'history') openWindow('history');
+  else if (what === 'menu') { openSettings('prefs'); openMenu(); }
+  else if (what === 'update') showUpdateDialog();
+  if (q.get('theme')) { saved.theme = draft.theme = q.get('theme'); setThemeButtons(saved.theme); applyTheme(saved.theme); }
+});
+</script>
+</body>
+</html>

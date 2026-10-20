@@ -1,3 +1,4 @@
+using System.Windows.Forms;
 using TrayKeeper.Logging;
 using TrayKeeper.Registry;
 using TrayKeeper.Services;

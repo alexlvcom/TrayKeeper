@@ -16,8 +16,16 @@ dotnet publish src/TrayKeeper/TrayKeeper.csproj -c Release -r win-x64 --self-con
 ```
 
 Produces a single `publish\TrayKeeper.exe` needing no installed runtime. Trimming is
-deliberately off — it is unsupported for WinForms and breaks the reflection the
-designer-free UI relies on.
+deliberately off — it is unsupported for WinForms and WPF.
+
+## UI
+
+The tray icon, its menu and the message loop are WinForms (`NotifyIcon`); every window
+and dialog is WPF, styled by the shared AlexLV Windows UI kit vendored in
+`src/TrayKeeper/AlexLV.WindowsUi/` (canonical copy and instructions:
+`C:\projects\AlexLV.WindowsUi\README.md`). Do not edit the vendored kit on its own:
+change the canonical copy and copy it to every app. The approved design is
+`design/ui-redesign.html`.
 
 ## Project layout
 
@@ -29,7 +37,8 @@ src/TrayKeeper/
   Services/    refresh orchestration, backup, undo, autostart, single instance
   Settings/    settings model and JSON store
   Logging/     rotating file log
-  Ui/          tray icon, context menu, results window
+  Ui/          tray icon and menu, WPF Settings, results, update and history windows
+  AlexLV.WindowsUi/  vendored shared theme kit (do not edit here)
   AppInfo.cs   the display name and the identifier name
 tests/TrayKeeper.Tests/
 ```
@@ -41,10 +50,11 @@ The matcher depends on no Windows API, which is what makes the scenario coverage
 
 The marketing version lives in two places that must agree, and a test enforces it:
 
-- `<VersionPrefix>` and `<FileVersion>` in `src/TrayKeeper/TrayKeeper.csproj`
-- the newest entry at the top of `Entries` in `src/TrayKeeper/Changelog.cs`
+- `Version`, `InformationalVersion`, `FileVersion` and `AssemblyVersion` in `src/TrayKeeper/TrayKeeper.csproj`
+- the newest `## [N.N.N] - date` heading in `CHANGELOG.md`, which is embedded and parsed by `Changelog.cs`
 
-Add a changelog entry whenever behaviour changes and bump both.
+There is no second, coded history any more. Add the changelog entry and bump the project
+versions together.
 
 ## Naming
 

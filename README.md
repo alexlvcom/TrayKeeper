@@ -25,6 +25,7 @@ one you already enabled, and enables it.
 - **Writes exactly one registry value**, `IsPromoted`, and only ever `0 → 1`. HKCU only, no elevation, no Explorer restart.
 - **Backs up before every change** and offers a one-click **Restore last changes**.
 - **Explains itself** — the report names the source and target paths, the match reason, and why each near miss was skipped.
+- **Light and dark themes** — follows the Windows light or dark mode by default, or choose one in Settings → Appearance.
 
 ## Install
 
@@ -33,9 +34,9 @@ and run it. Setup installs to `%LOCALAPPDATA%\Programs\Tray Keeper` without
 administrator privileges and preserves your settings and backups during upgrades.
 
 The app checks for updates at startup and daily by default. Choose the interval in
-Settings, or check manually in About. **Update** downloads and verifies the
-installer. The download timeout starts on that click; a timeout shows an error and
-lets you retry.
+Settings → Updates, or check manually there. **Update** downloads and verifies the
+installer, showing its progress. The download timeout starts on that click; a timeout
+or failure shows an error and offers **Try again**.
 
 The exe is unsigned, so Windows may show a SmartScreen warning on first run. See
 [Install and first run](docs/GUIDE.md#install-and-first-run) for what that means

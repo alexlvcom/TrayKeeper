@@ -68,24 +68,40 @@ icon.
 |---|---|
 | Refresh tray icons | Runs the scan and applies changes |
 | Show last results | Opens the report window |
-| Settings… | Opens Settings with Preferences, Updates, and About tabs |
+| Settings… | Opens Settings |
 | Exit | Removes the icon and quits |
+
+The menu, Settings, the report and every dialog follow the app theme.
 
 ## Settings
 
-Settings has three tabs:
+Settings has five tabs, each sized to fit the window without scrolling:
 
 | Tab | Contents |
 |---|---|
 | Preferences | Start with Windows, Run refresh when Tray Keeper starts, auto-refresh and its interval, balloon notifications, missing-executable handling |
-| Updates | Update check schedule (hourly, daily, weekly, monthly, never) and **Check for updates** |
-| About | Version, release notes, executable and data paths, and **Copy details** |
+| Appearance | **Theme**: System (default), Light or Dark. System follows the Windows light or dark mode and switches when Windows does |
+| Updates | Update status, the check schedule (hourly, daily, weekly, monthly, never) and **Check for updates** |
+| About | Version, build, release notes for the running version, **View full change history** and **Copy details** |
+| Diagnostics | Executable, settings, backups and logs paths, each with **Open** |
 
-Every tab shares one **Save** / **Cancel** footer. Changes are drafts until you click
-**Save** (or press Enter), which stores them and applies them at once without
-restarting Tray Keeper. **Cancel**, Esc, or the window's close button discards them.
-If the settings file cannot be written, Save shows an error and keeps the window open.
-**Check for updates**, **Open**, and **Copy details** act immediately and do not need Save.
+Every tab shares one **Save** / **Cancel** footer, which also counts your unsaved
+changes. Changes are drafts until you click **Save** (or press Enter), which stores
+them and applies them at once without restarting Tray Keeper. **Cancel**, Esc, or the
+window's close button discards them. A new theme previews as soon as you pick it;
+closing without Save puts the saved theme back. An auto-refresh interval outside 1–1440
+minutes is flagged under the field and not saved. If the settings file cannot be
+written, Save shows an error and keeps the window open. **Check for updates**,
+**Open**, and **Copy details** act immediately and do not need Save.
+
+## Last results
+
+The report window shows when the last refresh ran, its result and what it scanned,
+then one section each for the entries it enabled (old and new path, previous state,
+reason), entries that looked similar but were skipped, the enabled entries it matched
+against, and any errors. **Restore last changes** reverts the last refresh after a
+confirmation, **Restart Explorer** is there for a taskbar that stopped responding, and
+**Refresh now** reruns the scan.
 
 Double-clicking the tray icon runs a refresh. Launching Tray Keeper while it is
 already running signals the existing instance to refresh instead of adding a second

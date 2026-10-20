@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AlexLV.WindowsUi;
 using TrayKeeper.Logging;
 using TrayKeeper.Services;
 
@@ -24,6 +25,9 @@ public sealed class AppSettings
 
     /// <summary>Leave entries alone when their executable is confirmed missing.</summary>
     public bool SkipMissingExecutables { get; set; } = true;
+
+    /// <summary>Appearance → Theme. System follows the Windows app mode.</summary>
+    public AppTheme Theme { get; set; } = AppTheme.System;
 
     /// <summary>How often Tray Keeper checks GitHub for releases.</summary>
     public UpdateCheckFrequency CheckFrequency { get; set; } = UpdateCheckFrequency.Daily;
@@ -65,7 +69,10 @@ public sealed class SettingsStore
             if (!File.Exists(_path)) return new AppSettings();
 
             var json = File.ReadAllText(_path);
-            return JsonSerializer.Deserialize<AppSettings>(json, Options) ?? new AppSettings();
+            var settings = JsonSerializer.Deserialize<AppSettings>(json, Options) ?? new AppSettings();
+            // settings.json is hand-editable; an unknown theme falls back to System.
+            settings.Theme = ThemeManager.Normalize(settings.Theme);
+            return settings;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {

@@ -52,18 +52,47 @@ public class ChangelogTests
     }
 
     [Fact]
-    public void AssemblyVersionTracksTheMarketingVersion()
+    public void TheRunningVersionHasTheNewestChangelogHeading()
     {
-        // Guards against adding a changelog entry but forgetting to bump VersionPrefix /
-        // AssemblyVersion in the .csproj. Only major.minor is compared, because the build and
-        // revision parts come from the wildcard and change on every build.
-        var marketing = Version.Parse(Changelog.MarketingVersion);
-        var assembly = typeof(Changelog).Assembly.GetName().Version;
+        // 1.3.2 shipped reporting 1.3.1 from a stale coded history. All three parts must agree:
+        // the assembly version, the newest CHANGELOG.md heading and the release notes About shows.
+        var assembly = typeof(Changelog).Assembly.GetName().Version!;
 
-        Assert.NotNull(assembly);
-        Assert.Equal(marketing.Major, assembly!.Major);
-        Assert.Equal(marketing.Minor, assembly.Minor);
+        Assert.Equal(Changelog.Entries[0].Version, Changelog.MarketingVersion);
+        Assert.Equal($"{assembly.Major}.{assembly.Minor}.{assembly.Build}", Changelog.MarketingVersion);
+        Assert.NotNull(Changelog.Current);
     }
+
+    [Fact]
+    public void ParsesHeadingsSectionsAndBullets()
+    {
+        var entries = Changelog.Parse("""
+            # Changelog
+
+            ## [2.0.0] - 2026-11-01
+
+            ### Main changes
+            - First `big` change
+              continued on the next line.
+
+            ### Other updates
+            - Small fix
+
+            ## [1.9.0] - 2026-10-01
+            - Plain bullet
+            """);
+
+        Assert.Equal(new[] { "2.0.0", "1.9.0" }, entries.Select(e => e.Version));
+        Assert.Equal("2026-11-01", entries[0].Date);
+        Assert.Equal(new[] { "Main changes", "Other updates" }, entries[0].Sections.Select(s => s.Heading));
+        Assert.Equal("First big change continued on the next line.", entries[0].Sections[0].Bullets[0]);
+        Assert.Null(entries[1].Sections[0].Heading);
+        Assert.Equal(new[] { "Plain bullet" }, entries[1].Notes);
+    }
+
+    [Fact]
+    public void ReleaseNotesForAMissingVersionSayThereAreNone() =>
+        Assert.Equal("No release notes available for this version.", Changelog.GetReleaseNotes("0.0.1"));
 
     [Fact]
     public void BuildVersionIsReported() =>
