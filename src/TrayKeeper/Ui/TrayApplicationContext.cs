@@ -37,13 +37,14 @@ public sealed class TrayApplicationContext : ApplicationContext
     private readonly CancellationTokenSource _updateCancellation = new();
     private readonly System.Windows.Forms.Timer _updateTimer = new();
     private DateTime _nextUpdateCheckUtc = DateTime.MaxValue;
-    private bool _checkingUpdate;
+    private readonly SharedCheck<AppUpdate?> _updateCheck = new();
+    private UpdateWindow? _updateWindow;
     private Version? _lastOfferedUpdate;
     // The last finished check's outcome this session, so Settings opens on what it actually found.
     private UpdateStatus? _lastUpdateResult;
     private AppUpdate? _lastFoundUpdate;
 
-    /// <summary>True while a refresh runs or a dialog this class opened is on screen.</summary>
+    /// <summary>True while a refresh runs.</summary>
     private bool _busy;
 
     public TrayApplicationContext(
@@ -308,20 +309,17 @@ public sealed class TrayApplicationContext : ApplicationContext
     private async Task<UpdateStatus> CheckForUpdatesAsync(bool manual)
     {
         var current = Changelog.MarketingVersion;
-        if (_checkingUpdate) return new UpdateStatus(UpdateState.Checking, "Checking for updates…", "A check is already running");
+        if (!manual && _updateCheck.IsRunning) return new UpdateStatus(UpdateState.Checking, "Checking for updates…", "A check is already running");
         if (!manual && _settings.CheckFrequency == UpdateCheckFrequency.Never)
         {
             return new UpdateStatus(UpdateState.NotChecked, "Automatic checks are off", $"Version {current}");
         }
 
-        _checkingUpdate = true;
         try
         {
-            var update = await _updates.CheckAsync(Version.Parse(current), _updateCancellation.Token);
-            _settings.LastUpdateCheckUtc = DateTime.UtcNow;
-            _settingsStore.Save(_settings);
+            // A manual check joins a check already in flight and reports its result instead of being refused.
+            var update = await _updateCheck.RunAsync(RunUpdateCheckAsync);
             var checkedAt = DateTime.Now;
-            _lastFoundUpdate = update;
 
             if (update is null) return _lastUpdateResult = UpdateStatus.Latest(current, checkedAt);
 
@@ -337,24 +335,45 @@ public sealed class TrayApplicationContext : ApplicationContext
         }
         catch (Exception ex)
         {
-            _log.Error("Update check failed.", ex);
-            _lastFoundUpdate = null;
             return _lastUpdateResult = UpdateStatus.CheckFailed(current, ex.Message);
         }
-        finally { _checkingUpdate = false; }
     }
 
-    private void ShowUpdateDialog(AppUpdate update)
+    /// <summary>The network check alone; the shared guard covers only this, never the Update/Later window.</summary>
+    private async Task<AppUpdate?> RunUpdateCheckAsync()
     {
-        _busy = true;
         try
         {
-            new UpdateWindow(update, _updates, _updateCancellation.Token).ShowDialog();
+            var update = await _updates.CheckAsync(Version.Parse(Changelog.MarketingVersion), _updateCancellation.Token);
+            _settings.LastUpdateCheckUtc = DateTime.UtcNow;
+            _settingsStore.Save(_settings);
+            _lastFoundUpdate = update;
+            return update;
         }
-        finally
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _busy = false;
+            _log.Error("Update check failed.", ex);
+            _lastFoundUpdate = null;
+            throw;
         }
+    }
+
+    /// <summary>
+    /// Modeless, so an unanswered offer never blocks later checks. An open offer refreshes to the latest release when
+    /// Update is clicked, so it is brought to the front instead of stacking another.
+    /// </summary>
+    private void ShowUpdateDialog(AppUpdate update)
+    {
+        if (_updateWindow is { } open)
+        {
+            WinFormsHosting.ShowModeless(open);
+            return;
+        }
+
+        var window = new UpdateWindow(update, _updates, _updateCancellation.Token);
+        window.Closed += (_, _) => { if (_updateWindow == window) _updateWindow = null; };
+        _updateWindow = window;
+        WinFormsHosting.ShowModeless(window);
     }
 
     private void ExitApplication()
@@ -364,6 +383,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         _notifyIcon.Visible = false;
         _settingsWindow?.Close();
         _resultsWindow?.Close();
+        _updateWindow?.Close();
         ExitThread();
     }
 

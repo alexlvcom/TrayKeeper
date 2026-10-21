@@ -2,6 +2,13 @@
 
 All notable changes to Tray Keeper are documented here. Format follows Keep a Changelog; versions follow Semantic Versioning.
 
+## 1.4.2 - 2026-10-21
+
+### Main changes
+
+- Check for updates in Settings now always returns a result. It no longer stays stuck on "Checking for updates…" after a background check offered an update, and an open update offer is brought to the front instead of blocking new checks.
+- What’s New after an upgrade lists the main changes of every release since the version you had, not only the latest one.
+
 ## 1.4.1 - 2026-10-20
 
 ### Main changes
