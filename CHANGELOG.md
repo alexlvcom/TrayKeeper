@@ -2,6 +2,12 @@
 
 All notable changes to Tray Keeper are documented here. Format follows Keep a Changelog; versions follow Semantic Versioning.
 
+## 1.4.3 - 2026-10-25
+
+### Main changes
+
+- The setup wizard now shows the Tray Keeper logo, sharp at every display scaling, instead of the generic Inno Setup artwork.
+
 ## 1.4.2 - 2026-10-21
 
 ### Main changes

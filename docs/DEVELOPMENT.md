@@ -18,6 +18,15 @@ dotnet publish src/TrayKeeper/TrayKeeper.csproj -c Release -r win-x64 --self-con
 Produces a single `publish\TrayKeeper.exe` needing no installed runtime. Trimming is
 deliberately off — it is unsupported for WinForms and WPF.
 
+## Installer
+
+`scripts/build-installer.ps1` publishes the app and compiles `installer/TrayKeeper.iss`
+with Inno Setup 6 into `dist/TrayKeeper-Setup.exe` and `dist/SHA256SUMS.txt`.
+
+The wizard bitmaps in `installer/images/` are generated from the app icon by
+`scripts/generate-installer-images.ps1`, which also writes the `WizardImageFile` and
+`WizardSmallImageFile` lines into the `.iss`. Rerun it after changing the icon.
+
 ## UI
 
 The tray icon, its menu and the message loop are WinForms (`NotifyIcon`); every window
