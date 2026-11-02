@@ -36,7 +36,7 @@ public sealed class TrayApplicationContext : ApplicationContext
     private readonly UpdateService _updates = new();
     private readonly CancellationTokenSource _updateCancellation = new();
     private readonly System.Windows.Forms.Timer _updateTimer = new();
-    private DateTime _nextUpdateCheckUtc = DateTime.MaxValue;
+    private DateTime _updateRetryAfterUtc;
     private readonly SharedCheck<AppUpdate?> _updateCheck = new();
     private UpdateWindow? _updateWindow;
     private Version? _lastOfferedUpdate;
@@ -126,14 +126,10 @@ public sealed class TrayApplicationContext : ApplicationContext
         _shutdownListener.Show();
         WhatsNewWindow.Schedule();
 
-        _updateTimer.Interval = (int)TimeSpan.FromMinutes(15).TotalMilliseconds;
+        _updateTimer.Interval = (int)TimeSpan.FromMinutes(1).TotalMilliseconds;
         _updateTimer.Tick += async (_, _) =>
         {
-            if (DateTime.UtcNow >= _nextUpdateCheckUtc)
-            {
-                await CheckForUpdatesAsync(manual: false);
-                _nextUpdateCheckUtc = UpdateSchedule.NextCheck(DateTime.UtcNow, _settings.CheckFrequency);
-            }
+            if (UpdateDue()) await CheckForUpdatesAsync(manual: false);
         };
 
         ApplyUpdateSchedule();
@@ -251,6 +247,8 @@ public sealed class TrayApplicationContext : ApplicationContext
 
                 _settings = saved;
                 ApplyUpdateSchedule();
+                // Saving never pushes the next check out: run it now if it is already due.
+                if (UpdateDue()) _ = CheckForUpdatesAsync(manual: false);
                 _autoRefreshTimer.Interval = (int)_settings.AutoRefreshInterval.TotalMilliseconds;
                 _autoRefreshTimer.Enabled = _settings.AutoRefreshEnabled;
                 _notifyIcon.Text = TooltipText();
@@ -294,9 +292,12 @@ public sealed class TrayApplicationContext : ApplicationContext
     {
         _settings.CheckFrequency = UpdateSchedule.Normalize(_settings.CheckFrequency);
         _updateTimer.Stop();
-        _nextUpdateCheckUtc = UpdateSchedule.NextCheck(DateTime.UtcNow, _settings.CheckFrequency);
         if (_settings.CheckFrequency != UpdateCheckFrequency.Never) _updateTimer.Start();
     }
+
+    private bool UpdateDue() =>
+        !_updateCheck.IsRunning && DateTime.UtcNow >= _updateRetryAfterUtc
+        && UpdateSchedule.IsDue(_settings.CheckFrequency, _settings.LastUpdateCheckUtc, DateTime.UtcNow);
 
     /// <summary>
     /// Only a newer release opens the Update dialog: a manual check offers it every time, an automatic
@@ -354,6 +355,8 @@ public sealed class TrayApplicationContext : ApplicationContext
         {
             _log.Error("Update check failed.", ex);
             _lastFoundUpdate = null;
+            // A failed check (for example the network is not back yet after sleep) must not silence updates for a whole period.
+            _updateRetryAfterUtc = DateTime.UtcNow.AddMinutes(10);
             throw;
         }
     }
